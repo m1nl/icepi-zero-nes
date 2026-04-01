@@ -1,0 +1,3 @@
+[submodule "gateware/usb_hid_host"]
+	path = gateware/usb_hid_host
+	url = https://github.com/m1nl/usb_hid_host.git

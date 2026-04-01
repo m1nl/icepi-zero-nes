@@ -1,0 +1,13 @@
+*.o
+*.d
+__pycache__
+csr.csv
+build/
+litex_src/
+!lites_src/.keep
+tmp/
+firmware/*.bin
+firmware/*.elf
+firmware/*.elf.map
+gateware/6502n/*.v
+venv/
