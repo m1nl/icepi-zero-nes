@@ -1,6 +1,11 @@
 // Copyright (c) 2012-2013 Ludvig Strigeus
 // This program is GPL Licensed. See COPYING for the full license.
 
+// Changes by Mateusz Nalewajski
+// - simplify clock management (skip dejitter since framebuffer is used)
+// - disable PAL support, make core NTSC-only
+// - route APU signals to MMC5 cartridge to simplify design
+
 // Sprite DMA Works as follows.
 // When the CPU writes to $4014 DMA is initiated ASAP.
 // DMA runs for 512 cycles, the first cycle it reads from address

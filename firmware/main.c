@@ -85,7 +85,7 @@ static void help(void) {
     puts("Available commands:");
     puts("help               - Show this command");
     puts("reboot             - Reboot CPU");
-    puts("load_prg <path>    - Load NES PRG from SD card");
+    puts("load_nes <path>    - Load NES ROM from SD card");
     puts("ls [path]          - List SD card directory");
     puts("debug_mem          - Show last CPU/PPU SDRAM addresses");
     puts("hexdump <addr> [len] - Hex dump memory (len default 256)");
@@ -97,9 +97,9 @@ static void help(void) {
 
 static void reboot_cmd(void) { ctrl_reset_write(1); }
 
-static void load_prg_cmd(char *path) {
+static void load_nes_cmd(char *path) {
     if (*path == '\0') {
-        printf("usage: load_prg <path>\n");
+        printf("usage: load_nes <path>\n");
         return;
     }
     nes_loader_cmd(path);
@@ -165,8 +165,8 @@ static void console_service(void) {
         help();
     else if (strcmp(token, "reboot") == 0)
         reboot_cmd();
-    else if (strcmp(token, "load_prg") == 0)
-        load_prg_cmd(str);
+    else if (strcmp(token, "load_nes") == 0)
+        load_nes_cmd(str);
     else if (strcmp(token, "ls") == 0)
         ls_cmd(str);
     else if (strcmp(token, "debug_mem") == 0)

@@ -50,10 +50,8 @@ Addresses are offsets from `MAIN_RAM_BASE` (mirrors `game_loader.v`):
 | Region      | Offset      | Notes                         |
 |-------------|-------------|-------------------------------|
 | PRG ROM     | 0x0000000   | loaded by CPU                 |
-| CHR ROM     | 0x2000000   | S_LOADCHR                     |
-| Extra       | 0x10000000  | S_LOADEXTRA                   |
-| Work RAM    | 0x1800000   | cleared (0xFFFFF bytes)       |
-| Quattro RAM | 0x1C07FE    | mapper 232, cleared (2 bytes) |
+| CHR ROM     | 0x0800400   | loaded by CPU                 |
+| Work RAM    | 0x0380000   | cleared (0xFFFFF bytes)       |
 
 # iNES / NES 2.0 Header Parsing
 
@@ -116,58 +114,79 @@ The icepi_zero board has both SPI and native SDIO pins wired to the same physica
 
 # Demo App Build
 
-- Source: `demo/`
-- Build command: `make -C demo BUILD_DIR=../build/icepi_zero`
-- Add new `.c` files to `OBJECTS` in `demo/Makefile`
+- Source: `firmware/`
+- Build command: `make -C firmware BUILD_DIR=../build/icepi_zero`
+- Add new `.c` files to `OBJECTS` in `firmware/Makefile`
 - CSR accessors available via `#include <generated/csr.h>`
 - Memory map via `#include <generated/mem.h>`
 - Public API between files goes in a `.h` header; include it in both the `.c` and the caller to avoid `-Wmissing-prototypes`
 
-# Demo App Memory Layout
+# Firmware Memory Layout
 
-The app is linked at `0x41C00000` to avoid conflicting with NES ROM regions:
+The firmware is linked at `0x41000000` (`firmware/linker.ld`):
 
-| Address      | Content                        |
-|--------------|--------------------------------|
-| 0x40000000   | NES PRG ROM (written at runtime) |
-| 0x41800000   | NES Work RAM (cleared at runtime) |
-| 0x41C00000   | **Demo app** `.text`/`.rodata` |
-| 0x10000000   | App `.data`/`.bss`/stack (SRAM, always safe) |
+| Address      | Content                                        |
+|--------------|------------------------------------------------|
+| 0x40000000   | NES PRG ROM (written at runtime)               |
+| 0x40380000   | NES Work RAM (cleared at runtime)              |
+| 0x40800400   | NES CHR ROM (written at runtime)               |
+| 0x41000000   | Firmware `.text`/`.rodata` (main_ram VMA)      |
+| 0x41028000   | Heap base (`_app_base + 100K`)                 |
+| 0x10000000   | Firmware `.data`/`.bss`/stack (SRAM VMA)       |
 
-`linker.ld` sets `_app_base = 0x41C00000` to override the default `main_ram` origin.
+- `.text`/`.rodata` linked at `0x41000000` in `main_ram`
+- `.data` has VMA in `sram`, LMA in `main_ram` (copied at startup)
+- `.bss` in `sram`
+- Stack pointer: `ORIGIN(sram) + LENGTH(sram)` (`_fstack`)
+- Heap: `_fheap = _app_base + 100K`, `_eheap = ORIGIN(main_ram) + LENGTH(main_ram)`
+
+`firmware/linker.ld` sets `_app_base = 0x41000000`.
 
 # LiteX BIOS SD Card Boot
 
 The BIOS looks for `boot.json` on the SD card root, then falls back to `boot.bin`. `boot.json` maps filenames to load addresses; the **last entry** determines the CPU jump address.
 
-`demo/boot.json`:
+`firmware/boot.json`:
 ```json
 {
-    "demo.bin": "0x41C00000"
+    "firmware.bin": "0x41000000"
 }
 ```
 
-Copy both `demo.bin` and `boot.json` to the root of a FAT-formatted SD card. The BIOS will load `demo.bin` at `0x41C00000` and jump to it.
+Copy both `firmware.bin` and `boot.json` to the root of a FAT-formatted SD card. The BIOS will load `firmware.bin` at `0x41000000` and jump to it.
 
-# NES Loader (`demo/nes_loader.c`)
+# NES Loader (`firmware/nes_loader.c`)
 
 Loads a `.nes` file from SD card into MAIN_RAM and starts the NES core.
 
-Sequence:
+Key addresses (`firmware/nes_loader.c`):
+- `PRG_ROM_BASE = MAIN_RAM_BASE + 0x0000000`
+- `CHR_ROM_BASE = MAIN_RAM_BASE + 0x0800400`
+- `CLEARRAM_GEN_OFF = 0x380000` (work RAM, cleared for 0xFFFFF bytes)
+
+**SDRAM bank alignment:** The SDRAM address space is divided into 0x400-byte (1 KB) slots within each 0x1000-byte (4 KB) page. Bits `[11:10]` of the address select the bank within a page:
+- PRG (CPU) data must land at `addr[11:10] == 2'b00` (offset `+0x000` within each 4 KB page)
+- CHR (PPU) data must land at `addr[11:10] == 2'b01` (offset `+0x400` within each 4 KB page)
+
+This keeps CPU RAM and character RAM in separate SDRAM banks so the NES core can access them independently. The write loops in `firmware/nes_loader.c` enforce this: if the current pointer has the wrong `[11:10]` bits, it advances to the next 4 KB page and forces the correct offset before writing.
+
+Sequence (`nes_loader_cmd`):
 1. `nes_control_nes_reset_write(1)` — hold NES in reset
-2. Mount SD card via FatFS
+2. Mount SD card via FatFS (`f_mount`)
 3. Read & validate 16-byte iNES header
-4. Write PRG ROM to `MAIN_RAM_BASE + 0`
-5. Clear work RAM (mapper 232: 2 bytes at `+0x1C07FE`; others: 1 MB at `+0x1800000`)
-6. `nes_control_mapper_flags_write(flags)` — pass parsed flags
-7. `nes_control_nes_reset_write(0)` — release reset, NES runs
+4. Write PRG ROM to `PRG_ROM_BASE` with page-alignment
+5. Write CHR ROM (if any) to `CHR_ROM_BASE` with page-alignment
+6. Clear work RAM (`CLEARRAM_GEN_OFF`, 0xFFFFF bytes) using `memset` in 0x3FF-byte chunks stepping 0x1000
+7. `flush_cpu_dcache()` / `flush_l2_cache()`
+8. `nes_control_mapper_flags_write(flags)` — pass parsed flags
+9. `busy_wait_us(10000)`, then `nes_control_nes_reset_write(0)` — release reset, NES runs
 
 Entry point: `nes_loader_cmd(const char *path)` — called from `main.c` via `load_prg <path>` command.
-Public prototype declared in `demo/nes_loader.h`.
+Public prototype declared in `firmware/nes_loader.h`.
 
 # PRG/CHR Mask Computation
 
-`prg_mask` and `chr_mask` are 10-bit values computed in `demo/nes_loader.c`, mirroring `game_loader.v`'s `mask()` function:
+`prg_mask` and `chr_mask` are 10-bit values mirroring `game_loader.v`'s `mask()` function:
 
 ```
 mask[i] = (size_in_2kb_pages > 2^i)
@@ -179,13 +198,7 @@ Size derivation:
 - **iNES 1.0 CHR**: `chr_pages * 8192` bytes → `>> 11` for 2KB pages
 - **CHR RAM** (when `chr_size2 == 0`): iNES 1.0 = 8KB; NES 2.0 = `64 << flags11[3:0]` bytes
 
-Write sequence in `nes_load()`:
-1. Compute `mapper_flags` and `prg_mask`/`chr_mask` from header
-2. Write PRG to RAM, clear work RAM
-3. `nes_control_prg_mask_write(prg_mask)`
-4. `nes_control_chr_mask_write(chr_mask)`
-5. `nes_control_mapper_flags_write(flags)`
-6. `nes_control_nes_reset_write(0)`
+Note: `firmware/nes_loader.c` does **not** currently call `nes_control_prg_mask_write` or `nes_control_chr_mask_write` — only `nes_control_mapper_flags_write` is written in `nes_loader_cmd`.
 
 # Bare-Metal C Library Limitations (picolibc-minimal)
 
@@ -197,15 +210,15 @@ The demo app links against picolibc-minimal, which is missing many standard func
 - `__assert_no_args` — must be provided manually (see `demo/heap.c`)
 - `__ffssi2` — emitted by `__builtin_ffs` on RISC-V; avoided by compiling `tlsf.c` with `-U__GNUC__`
 
-**Rule:** When writing bare-metal C for the demo app, never use `sprintf`, `snprintf`, `strcat`, `strcpy`, or `strcasecmp`. Use `memcpy` and `strlen` (from `<string.h>`) for string operations.
+**Rule:** When writing bare-metal C for the firmware, never use `sprintf`, `snprintf`, `strcat`, `strcpy`, or `strcasecmp`. Use `memcpy` and `strlen` (from `<string.h>`) for string operations.
 
 # Heap / Dynamic Allocation
 
-- TLSF allocator: `demo/tlsf.c` / `demo/tlsf.h`
-- Wrappers: `demo/heap.c` / `demo/heap.h` — provides `malloc`, `realloc`, `free`, `heap_init()`
+- TLSF allocator: `firmware/tlsf.c` / `firmware/tlsf.h`
+- Wrappers: `firmware/heap.c` / `firmware/heap.h` — provides `malloc`, `realloc`, `free`, `heap_init()`
 - `heap_init()` must be called before any `malloc`/`free`/`realloc`
-- Heap symbols in `demo/linker.ld`:
-  - `_heap_base = _app_base + 100K` — 100 KiB reserved for app `.text`/`.rodata`
+- Heap symbols in `firmware/linker.ld`:
+  - `_heap_base = _app_base + 100K` → `0x41028000` — 100 KiB reserved for firmware `.text`/`.rodata`
   - `_heap_end  = ORIGIN(main_ram) + LENGTH(main_ram)`
   - `PROVIDE(_fheap = _heap_base); PROVIDE(_eheap = _heap_end)`
 - `tlsf.o` must be compiled with `CFLAGS += -U__GNUC__` to avoid `__ffssi2` linker error
@@ -256,10 +269,11 @@ To add an IRQ from a `LiteXModule` submodule:
 - `add_spi_flash(with_master=False)` — XIP mode; do NOT use `with_master=True` as it conflicts with BIOS memory-mapped access
 - BIOS maps SPI flash at `0x20000000`; bitstream must be at offset 0, BIOS at `+0x100000`
 
-# ROM Rotator (`demo/rom_rotator.c`)
+# ROM Rotator (`firmware/rom_rotator.c`)
 
 Scans `/roms` directory on SD card for `.nes` files on init, sorts alphabetically, loads first ROM. Three IRQ sources from `NESControl.ev` EventManager trigger navigation.
 
+- Source: `firmware/rom_rotator.c`
 - Entry points: `rom_rotator_init()` (call after `heap_init()`), `rom_rotator_isr()` (call from `nes_control_isr()`)
 - Individual ISRs also available: `rom_rotator_next_rom_isr()`, `rom_rotator_previous_rom_isr()`, `rom_rotator_reset_rom_isr()`
 - Uses dynamic `char **rom_list` (malloc/realloc), no fixed ROM limit

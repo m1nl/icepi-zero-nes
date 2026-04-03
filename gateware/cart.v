@@ -8,6 +8,9 @@
 // manageable code if we do it this way, and since not more than one mapper can be active
 // at a time, there will be no conflicts.
 
+// Notes by Mateusz Nalewajski:
+// Certain less-popular mappers are disabled to avoid routing issues.
+
 // SDRAM Locations for various RAM types:
 // PRG       = 0....
 // CHR       = 10...

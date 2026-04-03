@@ -920,7 +920,7 @@ module APU (
         .aclk1_d      (aclk1_delayed),
         .reset        (reset),
         .cold_reset   (cold_reset),
-        .allow_us     (allow_us),       // nand2mario
+        .allow_us     (allow_us),
         .sq2          (1'b1),
         .Addr         (ADDR[1:0]),
         .DIN          (DIN),
