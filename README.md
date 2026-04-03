@@ -109,8 +109,8 @@ Connect via serial at 115200 baud:
 
 ### Architecture
 
-- **System Clock**: 50 MHz (avoids clock domain crossing with memory controller)
-- **NES Clock**: 21.487 MHz (generated via phase accumulator)
+- **System Clock**: 50 MHz (default, as in LiteX target definiton)
+- **NES Clock**: 21.487 MHz (generated via phase accumulator, avoids CDC with memory controller)
 - **Video Output**: 256x240 native resolution, scaled to 720x480 HDMI
 - **Memory**: 32 MB SDRAM with separate banks for firmware, NES CPU, and NES PPU
 - **Audio**: 16-bit samples, DC-blocked and filtered at 20 kHz
@@ -137,7 +137,7 @@ Connect via serial at 115200 baud:
 
 - **NES Core**: Based on the [MiSTer NES](https://github.com/MiSTer-devel/NES_MiSTer) project (originally by Ludvig Strigeus)
 - **HDMI Output**: Modified from [hdl-util/hdmi](https://github.com/hdl-util/hdmi) by Sameer Puri
-- **USB HID Host**: By Mateusz Nalewajski ([m1nl/usb_hid_host](https://github.com/m1nl/usb_hid_host))
+- **USB HID Host**: By m1nl and nand2mario ([m1nl/usb_hid_host](https://github.com/m1nl/usb_hid_host))
 - **SoC Framework**: Built with [LiteX](https://github.com/enjoy-digital/litex)
 
 ## Design Decisions
