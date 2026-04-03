@@ -291,16 +291,16 @@ assign joypad_clock = {joypad2_cs && mr_int, joypad1_cs && mr_int};
 // 7 and 1/2 master cycles on NTSC. Therefore, the PPU should read or write once per cpu cycle, and
 // with our alignment, this should occur at PPU cycle 2 (the *third* cycle).
 
-wire mr_ppu = mr_int && ppu_read; // Read *from* the PPU.
-wire mw_ppu = mw_int && ppu_write; // Write *to* the PPU.
+wire mr_ppu = mr_int && ppu_read;   // Read *from* the PPU.
+wire mw_ppu = mw_int && ppu_write;  // Write *to* the PPU.
 wire ppu_cs = addr >= 'h2000 && addr < 'h4000;
 
-wire [7:0] ppu_dout;            // Data from PPU to CPU
-wire chr_read, chr_write;       // If PPU reads/writes from VRAM
-wire [13:0] chr_addr;           // Address PPU accesses in VRAM
-wire [7:0] chr_from_ppu;        // Data from PPU to VRAM
+wire [7:0] ppu_dout;           // Data from PPU to CPU
+wire chr_read, chr_write;      // If PPU reads/writes from VRAM
+wire [13:0] chr_addr;          // Address PPU accesses in VRAM
+wire [7:0] chr_from_ppu;       // Data from PPU to VRAM
 wire [7:0] chr_to_ppu;
-wire [19:0] mapper_ppu_flags;   // PPU flags for mapper cheating
+wire [19:0] mapper_ppu_flags;  // PPU flags for mapper cheating
 wire [8:0] ppu_cycle;
 
 assign cycle = ppu_cycle;
@@ -352,43 +352,43 @@ cart_top multi_mapper (
   // FPGA specific
   .clk            (clk),
   .reset          (reset),
-  .flags          (mapper_flags),                 // iNES header data
+  .flags          (mapper_flags),             // iNES header data
   .paused         (1'b0),
   // Cart pins (slightly abstracted)
-  .ce             (cart_ce && enable),            // M2
-  .cpu_ce         (cpu_ce && enable),             // Serves as M2 Inverted
-  .prg_ain        (prg_addr),                     // CPU Address in (a15 abstracted from ROMSEL)
-  .prg_read       (prg_read),                     // CPU RnW split
-  .prg_write      (prg_write),                    // CPU RnW split
-  .prg_din        (prg_din),                      // CPU Data bus in (split from bid)
-  .prg_dout       (prg_dout_mapper),              // CPU Data bus out (split from bid)
-  .chr_ain        (chr_addr),                     // PPU address in
-  .chr_read       (chr_read),                     // PPU read (inverted, active high)
-  .chr_write      (chr_write),                    // PPU write (inverted, active high)
-  .chr_din        (chr_from_ppu),                 // PPU data bus in (split from bid)
-  .chr_dout       (chr_from_ppu_mapper),          // PPU data bus in (split from bid)
-  .vram_a10       (vram_a10),                     // CIRAM a10 line
-  .vram_ce        (vram_ce),                      // CIRAM chip enable
-  .irq            (mapper_irq),                   // IRQ (inverted, active high)
-  .audio_in       (audio_mappers),                // Amplified and inverted APU audio
-  .audio          (sample_ext),                   // Mixed audio output from cart
+  .ce             (cart_ce && enable),        // M2
+  .cpu_ce         (cpu_ce && enable),         // Serves as M2 Inverted
+  .prg_ain        (prg_addr),                 // CPU Address in (a15 abstracted from ROMSEL)
+  .prg_read       (prg_read),                 // CPU RnW split
+  .prg_write      (prg_write),                // CPU RnW split
+  .prg_din        (prg_din),                  // CPU Data bus in (split from bid)
+  .prg_dout       (prg_dout_mapper),          // CPU Data bus out (split from bid)
+  .chr_ain        (chr_addr),                 // PPU address in
+  .chr_read       (chr_read),                 // PPU read (inverted, active high)
+  .chr_write      (chr_write),                // PPU write (inverted, active high)
+  .chr_din        (chr_from_ppu),             // PPU data bus in (split from bid)
+  .chr_dout       (chr_from_ppu_mapper),      // PPU data bus in (split from bid)
+  .vram_a10       (vram_a10),                 // CIRAM a10 line
+  .vram_ce        (vram_ce),                  // CIRAM chip enable
+  .irq            (mapper_irq),               // IRQ (inverted, active high)
+  .audio_in       (audio_mappers),            // Amplified and inverted APU audio
+  .audio          (sample_ext),               // Mixed audio output from cart
   // SDRAM Communication
-  .prg_aout       (prg_linaddr),                  // SDRAM adjusted PRG RAM address
-  .prg_allow      (prg_allow),                    // Simulates internal CE/Locking
-  .chr_aout       (chr_linaddr),                  // SDRAM adjusted CHR RAM address
-  .chr_allow      (chr_allow),                    // Simulates internal CE/Locking
+  .prg_aout       (prg_linaddr),              // SDRAM adjusted PRG RAM address
+  .prg_allow      (prg_allow),                // Simulates internal CE/Locking
+  .chr_aout       (chr_linaddr),              // SDRAM adjusted CHR RAM address
+  .chr_allow      (chr_allow),                // Simulates internal CE/Locking
   // Cheats
-  .prg_from_ram   (from_data_bus),                // Hacky cpu din <= get rid of this!
-  .ppuflags       (mapper_ppu_flags),             // Cheat for MMC5
-  .ppu_ce         (ppu_ce && enable),             // PPU Clock (cheat for MMC5)
-  .apu_ce         (apu_ce && enable),             // CE for MMC5 APU
-  .phi2           (phi2),                         // PHI2 for MMC5 APU
-  .odd_or_even    (odd_or_even),                  // odd_or_even for MMC5 APU
+  .prg_from_ram   (from_data_bus),            // Hacky cpu din <= get rid of this!
+  .ppuflags       (mapper_ppu_flags),         // Cheat for MMC5
+  .ppu_ce         (ppu_ce && enable),         // PPU Clock (cheat for MMC5)
+  .apu_ce         (apu_ce && enable),         // CE for MMC5 APU
+  .phi2           (phi2),                     // PHI2 for MMC5 APU
+  .odd_or_even    (odd_or_even),              // odd_or_even for MMC5 APU
   // Behavior helper flags
-  .has_chr_dout   (has_chr_from_ppu_mapper),      // Output specific data for CHR rather than from SDRAM
-  .prg_bus_write  (prg_bus_write),                // PRG data driven to bus
-  .prg_conflict   (prg_conflict),                 // Simulate bus conflicts
-  .prg_conflict_d0(prg_conflict_d0)               // Simulate bus conflicts for Mapper 144
+  .has_chr_dout   (has_chr_from_ppu_mapper),  // Output specific data for CHR rather than from SDRAM
+  .prg_bus_write  (prg_bus_write),            // PRG data driven to bus
+  .prg_conflict   (prg_conflict),             // Simulate bus conflicts
+  .prg_conflict_d0(prg_conflict_d0)           // Simulate bus conflicts for Mapper 144
 );
 
 /**********************************************************/

@@ -80,7 +80,7 @@ module nes_top #(
 );
 
 localparam integer SYS_CLK_FREQ = 50000;
-localparam integer NES_CLK_FREQ = 21487;
+localparam integer NES_CLK_FREQ = 21487;  // adjusted to match hsync with hdmi framebuffer
 
 localparam integer NES_CLOCK_COUNTER_WIDTH = $clog2(SYS_CLK_FREQ + NES_CLK_FREQ + 1);
 
@@ -432,9 +432,9 @@ wire game_y_usb [0:1];
 wire game_sel_usb [0:1];
 wire game_sta_usb [0:1];
 
-wire [3:0] rom_dout [0:1];
-wire [9:0] rom_addr [0:1];
-wire       rom_en   [0:1];
+wire [3:0] usb_rom_dout [0:1];
+wire [9:0] usb_rom_addr [0:1];
+wire       usb_rom_en   [0:1];
 
 wire [1:0] typ [0:1];
 
@@ -442,12 +442,12 @@ usb_hid_host_dual_rom #(
   .MEMORY_FILE("../rom/usb_hid_host_rom.mem")
 ) usb_hid_host_dual_rom_0 (
   .clk(usb_clk),
-  .ena(rom_en[0]),
-  .addra(rom_addr[0]),
-  .douta(rom_dout[0]),
-  .enb(rom_en[1]),
-  .addrb(rom_addr[1]),
-  .doutb(rom_dout[1])
+  .ena(usb_rom_en[0]),
+  .addra(usb_rom_addr[0]),
+  .douta(usb_rom_dout[0]),
+  .enb(usb_rom_en[1]),
+  .addrb(usb_rom_addr[1]),
+  .doutb(usb_rom_dout[1])
 );
 
 usb_hid_host #(
@@ -465,9 +465,9 @@ usb_hid_host #(
   .usb_dp_o(usb_dp_o[0]),
   .usb_oe(usb_oe[0]),
   .typ(typ[0]),
-  .rom_addr(rom_addr[0]),
-  .rom_dout(rom_dout[0]),
-  .rom_en(rom_en[0]),
+  .usb_rom_addr(usb_rom_addr[0]),
+  .usb_rom_dout(usb_rom_dout[0]),
+  .usb_rom_en(usb_rom_en[0]),
   .game_l(game_l_usb[0]),
   .game_r(game_r_usb[0]),
   .game_u(game_u_usb[0]),
@@ -495,9 +495,9 @@ usb_hid_host #(
   .usb_dp_o(usb_dp_o[1]),
   .usb_oe(usb_oe[1]),
   .typ(typ[1]),
-  .rom_addr(rom_addr[1]),
-  .rom_dout(rom_dout[1]),
-  .rom_en(rom_en[1]),
+  .rom_addr(usb_rom_addr[1]),
+  .rom_dout(usb_rom_dout[1]),
+  .rom_en(usb_rom_en[1]),
   .game_l(game_l_usb[1]),
   .game_r(game_r_usb[1]),
   .game_u(game_u_usb[1]),
@@ -520,7 +520,9 @@ cdc_sync #(
 ) cdc_game_0 (
   .clk_dst(clk),
   .rst_dst(rst),
-  .in({game_y_usb[0], game_x_usb[0], game_r_usb[0], game_l_usb[0], game_d_usb[0], game_u_usb[0], game_sta_usb[0], game_sel_usb[0], game_b_usb[0] ,game_a_usb[0]}),
+  .in({game_y_usb[0], game_x_usb[0], game_r_usb[0], game_l_usb[0],
+       game_d_usb[0], game_u_usb[0], game_sta_usb[0], game_sel_usb[0],
+       game_b_usb[0] ,game_a_usb[0]}),
   .out(game[0])
 );
 
@@ -529,7 +531,9 @@ cdc_sync #(
 ) cdc_game_1 (
   .clk_dst(clk),
   .rst_dst(rst),
-  .in({game_y_usb[1], game_x_usb[1], game_r_usb[1], game_l_usb[1], game_d_usb[1], game_u_usb[1], game_sta_usb[1], game_sel_usb[1], game_b_usb[1], game_a_usb[1]}),
+  .in({game_y_usb[1], game_x_usb[1], game_r_usb[1], game_l_usb[1],
+       game_d_usb[1], game_u_usb[1], game_sta_usb[1], game_sel_usb[1],
+       game_b_usb[1], game_a_usb[1]}),
   .out(game[1])
 );
 
