@@ -124,7 +124,6 @@ class NESTop(Module):
         platform.add_source(os.path.join(gateware_dir, "ppu.v"))
         platform.add_source(os.path.join(gateware_dir, "cart.v"))
         platform.add_source(os.path.join(gateware_dir, "framebuffer.v"))
-        platform.add_source(os.path.join(gateware_dir, "util_convround.v"))
         platform.add_source(os.path.join(gateware_dir, "iir_filter.v"))
         platform.add_source(os.path.join(gateware_dir, "dc_blocker.v"))
         platform.add_source_dir(os.path.join(gateware_dir, "mappers"))

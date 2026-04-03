@@ -461,25 +461,27 @@ end
 assign audio_out = audio_o[16:1];
 
 APU mmc5apu(
-    .MMC5           (1'b1),
-    .clk            (clk),
-    .ce             (apu_ce),
-    .PHI2           (phi2),
-    .CS             (apu_cs),
-    .reset          (~enable),
-    .ADDR           (addr_in[4:0]),
-    .DIN            (data_in),
-    .DOUT           (data_out),
-    .RW             (~wren),
-    .audio_channels (5'b10011),
-    .Sample         (audio),
-    .DmaReq         (),
-    .DmaAck         (1'b1),
-    .DmaAddr        (),
-    .DmaData        (8'b0),
-    .odd_or_even    (odd_or_even),
-    .IRQ            (),
-    .cold_reset(1'b0), .allow_us(1'b0), .PAL(1'b0)
+    .MMC5          (1'b1),
+    .clk           (clk),
+    .ce            (apu_ce),
+    .PHI2          (phi2),
+    .CS            (apu_cs),
+    .reset         (~enable),
+    .cold_reset    (~enable),
+    .allow_us      (1'b0),
+    .PAL           (1'b0),
+    .ADDR          (addr_in[4:0]),
+    .DIN           (data_in),
+    .DOUT          (data_out),
+    .RW            (~wren),
+    .audio_channels(5'b10011),
+    .Sample        (audio),
+    .DmaReq        (),
+    .DmaAck        (1'b1),
+    .DmaAddr       (),
+    .DmaData       (8'b0),
+    .odd_or_even   (odd_or_even),
+    .IRQ           ()
 );
 
 endmodule

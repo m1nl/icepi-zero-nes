@@ -372,6 +372,9 @@ module mmc5_mixed (
 		.PHI2(phi2),
 		.CS(apu_cs),
 		.reset(~enable),
+		.cold_reset(~enable),
+		.allow_us(1'b0),
+		.PAL(1'b0),
 		.ADDR(addr_in[4:0]),
 		.DIN(data_in),
 		.DOUT(data_out),
@@ -383,9 +386,6 @@ module mmc5_mixed (
 		.DmaAddr(),
 		.DmaData(8'b00000000),
 		.odd_or_even(odd_or_even),
-		.IRQ(),
-		.cold_reset(1'b0),
-		.allow_us(1'b0),
-		.PAL(1'b0)
+		.IRQ()
 	);
 endmodule

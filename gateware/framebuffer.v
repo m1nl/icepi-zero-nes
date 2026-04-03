@@ -18,52 +18,31 @@ reg [23:0] palette_lut [0:63];
 
 wire        ena;
 wire [15:0] offset;
-wire  [7:0] offset_round;
 wire [15:0] addra;
 
-reg        ena_r [0:1];
-reg  [9:0] cy_r  [0:1];
+reg        ena_r;
+reg  [9:0] cy_r;
 reg [15:0] offset_r;
-
-reg        jitter;
 
 reg [5:0]  dout;
 reg        dout_valid;
 
-assign ena    = cx > 35 && cx <= 675 && cy < 480;
-assign offset = (cx - (jitter ? 34 : 35)) * 102;
+assign ena    = cx > 36 && cx <= 677 && cy < 480;
+assign offset = (cx - 36) * 102;
 
 always @(posedge clk_pixel) begin
-  ena_r[0] <= ena;
-  ena_r[1] <= ena_r[0];
-
-  cy_r[0] <= cy;
-  cy_r[1] <= cy_r[0];
-
+  ena_r    <= ena;
+  cy_r     <= cy;
   offset_r <= offset;
-
-  if (cx == 675)
-    jitter <= !jitter;
 end
 
-util_convround #(
-  .IWID(16),
-  .OWID(8),
-  .SHIFT(0)
-) offset_round_0 (
-  .i_clk(clk),
-  .i_ce(ena[0]),
-  .i_val(offset_r),
-  .o_val(offset_round)
-);
-
-assign addra  = {1'b0, cy_r[1][8:1], 8'b0} + {8'b0, offset_round};
+assign addra = {1'b0, cy_r[8:1], 8'b0} + {8'b0, offset_r[15:8]};
 
 always @(posedge clk_pixel) begin
-  if (ena_r[1])
+  if (ena_r)
     dout <= mem[addra];
 
-  dout_valid <= ena_r[1];
+  dout_valid <= ena_r;
 end
 
 reg [7:0] ro, go, bo;
@@ -81,8 +60,8 @@ reg        enb_r;
 reg [15:0] addrb_r;
 reg [5:0]  color_r;
 
-assign addrb = {scanline, 8'b0} + {8'b0, cycle};
 assign enb   = scanline < 240 && cycle < 256 && enable;
+assign addrb = {scanline, 8'b0} + {8'b0, cycle};
 
 always @(posedge clk) begin
   enb_r   <= enb;
