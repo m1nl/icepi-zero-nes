@@ -193,8 +193,8 @@ This project contains components under various open-source licenses:
 - cheyao for the [IcePi-Zero](https://github.com/cheyao/icepi-zero) board design
 - The [MiSTer NES](https://github.com/MiSTer-devel/NES_MiSTer) project and its contributors
 - Gideon Zweijtzer for [6502n](https://github.com/GideonZ/1541ultimate/tree/master/fpga/6502n/vhdl_source) CPU implementation
-- Ludvig Strigeus for the original FPGA NES implementation
-- Sameer Puri for the HDMI implementation
-- The LiteX team for the SoC framework
+- Ludvig Strigeus for the [original FPGA NES](https://github.com/strigeus/fpganes) implementation
+- Sameer Puri for the [HDMI core](https://github.com/hdl-util/hdmi) implementation
+- The LiteX team for the [SoC framework](https://github.com/enjoy-digital/litex)
 - All contributors to the various mapper implementations
 
