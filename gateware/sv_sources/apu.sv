@@ -1,6 +1,8 @@
 // Rewritten 6/4/2020 by Kitrinx
 // This code is GPLv3.
 
+// Add output pipeline for mixing to relax timing by Mateusz Nalewajski
+
 module LenCounterUnit (
     input  logic       clk,
     input  logic       reset,
