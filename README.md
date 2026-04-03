@@ -137,7 +137,7 @@ Connect via serial at 115200 baud:
 
 - **NES Core**: Based on the [MiSTer NES](https://github.com/MiSTer-devel/NES_MiSTer) project (originally by Ludvig Strigeus)
 - **HDMI Output**: Modified from [hdl-util/hdmi](https://github.com/hdl-util/hdmi) by Sameer Puri
-- **USB HID Host**: By m1nl and nand2mario ([m1nl/usb_hid_host](https://github.com/m1nl/usb_hid_host))
+- **USB HID Host**: By m1nl and nand2mario ([m1nl/usb_hid_host](https://github.com/m1nl/usb_hid_host)) with full-speed USB support
 - **SoC Framework**: Built with [LiteX](https://github.com/enjoy-digital/litex)
 
 ## Design Decisions
@@ -179,7 +179,6 @@ The SDRAM controller runs at 100 MHz (2x system clock) to provide sufficient ban
 
 - NTSC timing only (no PAL support)
 - Some mappers disabled to meet timing constraints
-- USB 1.1 speed only (sufficient for gamepad input)
 
 ## License
 
