@@ -435,8 +435,10 @@ endmodule
 
 module mmc5_mixed (
     input         clk,
-    input         ce,    // Negedge M2 (aka CPU ce)
+    input         apu_ce,
     input         enable,
+    input         phi2,
+    input         odd_or_even,
     input         wren,
     input         rden,
     input  [15:0] addr_in,
@@ -448,33 +450,20 @@ module mmc5_mixed (
 
 // NOTE: The apu volume is 100% of MMC5 and the polarity is reversed.
 wire [15:0] audio;
-wire apu_cs = (addr_in[15:5]==11'b0101_0000_000) && (addr_in[3]==0);
-wire DmaReq;          // 1 when DMC wants DMA
-wire [15:0] DmaAddr;  // Address DMC wants to read
-wire apu_irq;         // TODO: IRQ asserted
+wire        apu_cs = (addr_in[15:5] == 11'b0101_0000_000) && (addr_in[3] == 0);
 
 reg  [16:0] audio_o;
 
-always @(posedge clk)
+always @(posedge clk) begin
     audio_o <= audio + audio_in;
+end
 
 assign audio_out = audio_o[16:1];
-
-reg odd_or_even;
-reg phi2;
-
-always @(posedge clk) begin
-    phi2 <= ce;
-    if (~enable)
-        odd_or_even <= 0;
-    else if (ce)
-        odd_or_even <= ~odd_or_even;
-end
 
 APU mmc5apu(
     .MMC5           (1'b1),
     .clk            (clk),
-    .ce             (ce),
+    .ce             (apu_ce),
     .PHI2           (phi2),
     .CS             (apu_cs),
     .reset          (~enable),
@@ -484,12 +473,12 @@ APU mmc5apu(
     .RW             (~wren),
     .audio_channels (5'b10011),
     .Sample         (audio),
-    .DmaReq         (DmaReq),
+    .DmaReq         (),
     .DmaAck         (1'b1),
-    .DmaAddr        (DmaAddr),
-    .DmaData        (0),
+    .DmaAddr        (),
+    .DmaData        (8'b0),
     .odd_or_even    (odd_or_even),
-    .IRQ            (apu_irq),
+    .IRQ            (),
     .cold_reset(1'b0), .allow_us(1'b0), .PAL(1'b0)
 );
 

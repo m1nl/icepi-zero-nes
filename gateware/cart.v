@@ -20,6 +20,9 @@ module cart_top (
     input             ce,               // M2
     input             ppu_ce,
     input             cpu_ce,           // CPU Phi1 clock (several mappers use m2 inverted)
+    input             apu_ce,
+    input             phi2,
+    input             odd_or_even,
     input             paused,           // This indicates the core is paused so anything using the master clock won't get messed up
     input             reset,
     input      [19:0] ppuflags,         // Misc flags from PPU for MMC5 cheating
@@ -1444,8 +1447,10 @@ Mapper200 map200(
 
 mmc5_mixed snd_mmc5 (
     .clk(clk),
-    .ce(ce),
+    .apu_ce(apu_ce),
     .enable(me[5]),
+    .phi2(phi2),
+    .odd_or_even(odd_or_even),
     .wren(prg_write),
     .rden(prg_read),
     .addr_in(prg_ain),
@@ -1479,13 +1484,16 @@ always @(*) begin
     endcase
 end
 
+reg [9:0] mapper_id;
+
+always @(posedge clk)
+    if (reset)
+        mapper_id <= {flags[18:17], flags[7:0]};
+
 always @(*) begin
     me = 1024'd0;
 
-    if (!reset)
-        me[{flags[18:17],flags[7:0]}] = 1'b1;
-    else
-        me[1023] = 1'b1;
+    me[reset ? 1023 : mapper_id] = 1'b1;
 
     // Mapper output to cart pins
     {prg_aout,   prg_allow,   chr_aout,   vram_a10,   vram_ce,   chr_allow,   prg_dout,   chr_dout,   irq,   audio} =

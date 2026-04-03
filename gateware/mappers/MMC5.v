@@ -336,8 +336,10 @@ module MMC5 (
 endmodule
 module mmc5_mixed (
 	clk,
-	ce,
+	apu_ce,
 	enable,
+	phi2,
+	odd_or_even,
 	wren,
 	rden,
 	addr_in,
@@ -347,8 +349,10 @@ module mmc5_mixed (
 	audio_out
 );
 	input clk;
-	input ce;
+	input apu_ce;
 	input enable;
+	input phi2;
+	input odd_or_even;
 	input wren;
 	input rden;
 	input [15:0] addr_in;
@@ -358,25 +362,13 @@ module mmc5_mixed (
 	output wire [15:0] audio_out;
 	wire [15:0] audio;
 	wire apu_cs = (addr_in[15:5] == 11'b01010000000) && (addr_in[3] == 0);
-	wire DmaReq;
-	wire [15:0] DmaAddr;
-	wire apu_irq;
 	reg [16:0] audio_o;
 	always @(posedge clk) audio_o <= audio + audio_in;
 	assign audio_out = audio_o[16:1];
-	reg odd_or_even;
-	reg phi2;
-	always @(posedge clk) begin
-		phi2 <= ce;
-		if (~enable)
-			odd_or_even <= 0;
-		else if (ce)
-			odd_or_even <= ~odd_or_even;
-	end
 	APU mmc5apu(
 		.MMC5(1'b1),
 		.clk(clk),
-		.ce(ce),
+		.ce(apu_ce),
 		.PHI2(phi2),
 		.CS(apu_cs),
 		.reset(~enable),
@@ -386,12 +378,12 @@ module mmc5_mixed (
 		.RW(~wren),
 		.audio_channels(5'b10011),
 		.Sample(audio),
-		.DmaReq(DmaReq),
+		.DmaReq(),
 		.DmaAck(1'b1),
-		.DmaAddr(DmaAddr),
-		.DmaData(0),
+		.DmaAddr(),
+		.DmaData(8'b00000000),
 		.odd_or_even(odd_or_even),
-		.IRQ(apu_irq),
+		.IRQ(),
 		.cold_reset(1'b0),
 		.allow_us(1'b0),
 		.PAL(1'b0)

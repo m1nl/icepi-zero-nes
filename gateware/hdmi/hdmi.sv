@@ -116,7 +116,7 @@ generate
             end
         2, 3:
         begin
-            assign frame_width = 858;
+            assign frame_width = 857;
             assign frame_height = 525;
             assign screen_width = 720;
             assign screen_height = 480;

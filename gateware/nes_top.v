@@ -79,8 +79,8 @@ module nes_top #(
   inout  wire       usb_dn_1
 );
 
-localparam integer SYS_CLK_FREQ = 50000;  // 50MHz system clock
-localparam integer NES_CLK_FREQ = 21493;  // 21.493MHz NES clock (slightly higher for better HDMI sync)
+localparam integer SYS_CLK_FREQ = 50000;
+localparam integer NES_CLK_FREQ = 21487;
 
 localparam integer NES_CLOCK_COUNTER_WIDTH = $clog2(SYS_CLK_FREQ + NES_CLK_FREQ + 1);
 
@@ -89,7 +89,6 @@ wire nes_en;
 
 wire cpu_ce;
 wire ppu_ce;
-wire apu_ce;
 
 wire stall;
 
@@ -188,9 +187,7 @@ assign ext_audio = (mapper_flags[7:0] == 19) || (mapper_flags[7:0] == 24) || (ma
 NES nes_0 (
   .clk(clk),
   .enable(nes_en),
-  .cold_reset(rst),
-  .reset_nes(nes_reset),
-  .sys_type(2'b00),
+  .reset(nes_reset),
   .cpumem_addr(cpumem_addr),
   .cpumem_read(cpumem_read),
   .cpumem_write(cpumem_write),
@@ -217,9 +214,6 @@ NES nes_0 (
   .mask(2'b11),
   .int_audio(int_audio),
   .ext_audio(ext_audio),
-  .cart_ce(),
-  .apu_ce(apu_ce),
-  .save_written(),
   .vblank(),
   .hblank()
 );
@@ -320,7 +314,7 @@ end
 
 framebuffer framebuffer_0 (
   .clk(clk),
-  .enable(nes_en),
+  .enable(ppu_ce && nes_en),
   .color(color),
   .cycle(cycle),
   .scanline(scanline),
