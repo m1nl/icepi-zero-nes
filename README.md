@@ -47,6 +47,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install LiteX
+mkdir litex_src
 cd litex_src
 wget https://raw.githubusercontent.com/enjoy-digital/litex/master/litex_setup.py
 chmod +x litex_setup.py

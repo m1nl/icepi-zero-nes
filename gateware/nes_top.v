@@ -455,6 +455,9 @@ wire [3:0] usb_rom_dout [0:1];
 wire [9:0] usb_rom_addr [0:1];
 wire       usb_rom_en   [0:1];
 
+wire       usb_full_report [0:1];
+wire [1:0] usb_typ         [0:1];
+
 wire [1:0] typ [0:1];
 
 usb_hid_host_dual_rom #(
@@ -483,10 +486,11 @@ usb_hid_host #(
   .usb_dm_o(usb_dm_o[0]),
   .usb_dp_o(usb_dp_o[0]),
   .usb_oe(usb_oe[0]),
-  .typ(typ[0]),
-  .usb_rom_addr(usb_rom_addr[0]),
-  .usb_rom_dout(usb_rom_dout[0]),
-  .usb_rom_en(usb_rom_en[0]),
+  .typ(usb_typ[0]),
+  .rom_addr(usb_rom_addr[0]),
+  .rom_dout(usb_rom_dout[0]),
+  .rom_en(usb_rom_en[0]),
+  .full_report(usb_full_report[0]),
   .game_l(game_l_usb[0]),
   .game_r(game_r_usb[0]),
   .game_u(game_u_usb[0]),
@@ -513,10 +517,11 @@ usb_hid_host #(
   .usb_dm_o(usb_dm_o[1]),
   .usb_dp_o(usb_dp_o[1]),
   .usb_oe(usb_oe[1]),
-  .typ(typ[1]),
+  .typ(usb_typ[1]),
   .rom_addr(usb_rom_addr[1]),
   .rom_dout(usb_rom_dout[1]),
   .rom_en(usb_rom_en[1]),
+  .full_report(usb_full_report[1]),
   .game_l(game_l_usb[1]),
   .game_r(game_r_usb[1]),
   .game_u(game_u_usb[1]),
@@ -535,25 +540,44 @@ reg [1:0] joypad_clock_r;
 reg [7:0] joypad_bits [0:1];
 
 cdc_sync #(
-  .N(10)
-) cdc_game_0 (
+  .N(4)
+) cdc_typ_0 (
   .clk_dst(clk),
   .rst_dst(rst),
-  .in({game_y_usb[0], game_x_usb[0], game_r_usb[0], game_l_usb[0],
-       game_d_usb[0], game_u_usb[0], game_sta_usb[0], game_sel_usb[0],
-       game_b_usb[0] ,game_a_usb[0]}),
-  .out(game[0])
+  .in({usb_typ[1], usb_typ[0]}),
+  .out({typ[1], typ[0]})
 );
 
-cdc_sync #(
-  .N(10)
-) cdc_game_1 (
+cdc_handshake #(
+  .WIDTH(10)
+) cdc_game_0 (
+  .clk_src(usb_clk),
+  .rst_src(usb_rst),
+  .data_in({game_y_usb[0], game_x_usb[0], game_r_usb[0], game_l_usb[0],
+            game_d_usb[0], game_u_usb[0], game_sta_usb[0], game_sel_usb[0],
+            game_b_usb[0] ,game_a_usb[0]}),
+  .send(usb_full_report[0]),
+  .busy(),
   .clk_dst(clk),
   .rst_dst(rst),
-  .in({game_y_usb[1], game_x_usb[1], game_r_usb[1], game_l_usb[1],
-       game_d_usb[1], game_u_usb[1], game_sta_usb[1], game_sel_usb[1],
-       game_b_usb[1], game_a_usb[1]}),
-  .out(game[1])
+  .data_out(game[0]),
+  .valid()
+);
+
+cdc_handshake #(
+  .WIDTH(10)
+) cdc_game_1 (
+  .clk_src(usb_clk),
+  .rst_src(usb_rst),
+  .data_in({game_y_usb[1], game_x_usb[1], game_r_usb[1], game_l_usb[1],
+            game_d_usb[1], game_u_usb[1], game_sta_usb[1], game_sel_usb[1],
+            game_b_usb[1] ,game_a_usb[1]}),
+  .send(usb_full_report[1]),
+  .busy(),
+  .clk_dst(clk),
+  .rst_dst(rst),
+  .data_out(game[1]),
+  .valid()
 );
 
 wire extra_sel_0 = (game[0][8] && game[0][9] && game[0][0]);  // A + X + Y
@@ -563,20 +587,32 @@ wire extra_sel_1 = (game[1][8] && game[1][9] && game[1][0]);  // A + X + Y
 wire extra_sta_1 = (game[1][8] && game[1][9] && game[1][1]);  // B + X + Y
 
 always @(posedge clk) begin
-  if (joypad_strobe) begin
-    joypad_bits[0] <= (extra_sta_0 || extra_sel_0) ?
-      {4'b0, extra_sta_0, extra_sel_0, 2'b0} : game[0][7:0];
-    joypad_bits[1] <= (extra_sta_1 || extra_sel_1) ?
-      {4'b0, extra_sta_1, extra_sel_1, 2'b0} : game[1][7:0];
+  if (rst || nes_reset) begin
+    joypad_bits[0] <= 8'b0;
+    joypad_bits[0] <= 8'b0;
+
+    joypad_clock_r <= 2'b0;
+  end else begin
+    if (typ[0] != 2'b11)
+      joypad_bits[0] <= 8'b0;
+    else if (joypad_strobe)
+      joypad_bits[0] <= (extra_sta_0 || extra_sel_0) ?
+        {4'b0, extra_sta_0, extra_sel_0, 2'b0} : game[0][7:0];
+
+    if (typ[1] != 2'b11)
+      joypad_bits[1] <= 8'b0;
+    else if (joypad_strobe)
+      joypad_bits[1] <= (extra_sta_1 || extra_sel_1) ?
+        {4'b0, extra_sta_1, extra_sel_1, 2'b0} : game[1][7:0];
+
+    if (!joypad_clock[0] && joypad_clock_r[0])
+      joypad_bits[0] <= {1'b0, joypad_bits[0][7:1]};
+
+    if (!joypad_clock[1] && joypad_clock_r[1])
+      joypad_bits[1] <= {1'b0, joypad_bits[1][7:1]};
+
+    joypad_clock_r <= joypad_clock;
   end
-
-  if (!joypad_clock[0] && joypad_clock_r[0])
-    joypad_bits[0] <= {1'b0, joypad_bits[0][7:1]};
-
-  if (!joypad_clock[1] && joypad_clock_r[1])
-    joypad_bits[1] <= {1'b0, joypad_bits[1][7:1]};
-
-  joypad_clock_r <= joypad_clock;
 end
 
 assign joypad1_data = {4'b0, joypad_bits[0][0]};
