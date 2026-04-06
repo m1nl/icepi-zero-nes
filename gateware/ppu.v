@@ -7,17 +7,16 @@
 module LoopyGen (
     input clk,
     input ce,
+    input reset,
     input is_rendering,
-    input [2:0] ain,     // input address from CPU
-    input [7:0] din,     // data input
-    input read,          // read
-    input write,         // write
-    input is_pre_render, // Is this the pre-render scanline
+    input [2:0] ain,      // input address from CPU
+    input [7:0] din,      // data input
+    input read,           // read
+    input write,          // write
+    input is_pre_render,  // Is this the pre-render scanline
     input [8:0] cycle,
     output [14:0] loopy,
-    output [2:0] fine_x_scroll,  // Current loopy value
-    input vblank,
-    input hblank
+    output [2:0] fine_x_scroll  // Current loopy value
 );
 
 // Controls how much to increment on each write
@@ -31,74 +30,75 @@ reg [2:0] loopy_x;
 // Latch
 reg ppu_address_latch;
 
-initial begin
-    ppu_incr = 0;
-    loopy_v = 0;
-    loopy_t = 0;
-    loopy_x = 0;
-    ppu_address_latch = 0;
-end
-
 // Handle updating loopy_t and loopy_v
-always @(posedge clk) if (ce) begin
-    if (is_rendering) begin
-        // Increment course X scroll right after attribute table byte was fetched.
-        if (cycle[2:0] == 3 && (cycle < 256 || cycle >= 320 && cycle < 336)) begin
-            loopy_v[4:0] <= loopy_v[4:0] + 1'd1;
-            loopy_v[10] <= loopy_v[10] ^ (loopy_v[4:0] == 31);
-        end
+always @(posedge clk) begin
+    if (reset) begin
+        ppu_incr <= 0;
+        loopy_v <= 0;
+        loopy_t <= 0;
+        loopy_x <= 0;
+        ppu_address_latch <= 0;
 
-        // Vertical Increment
-        if (cycle == 251) begin
-            loopy_v[14:12] <= loopy_v[14:12] + 1'd1;
-            if (loopy_v[14:12] == 7) begin
-                if (loopy_v[9:5] == 29) begin
-                    loopy_v[9:5] <= 0;
-                    loopy_v[11] <= !loopy_v[11];
-                end else begin
-                    loopy_v[9:5] <= loopy_v[9:5] + 1'd1;
+    end else if (ce) begin
+        if (is_rendering) begin
+            // Increment course X scroll right after attribute table byte was fetched.
+            if (cycle[2:0] == 3 && (cycle < 256 || cycle >= 320 && cycle < 336)) begin
+                loopy_v[4:0] <= loopy_v[4:0] + 1'd1;
+                loopy_v[10] <= loopy_v[10] ^ (loopy_v[4:0] == 31);
+            end
+
+            // Vertical Increment
+            if (cycle == 251) begin
+                loopy_v[14:12] <= loopy_v[14:12] + 1'd1;
+                if (loopy_v[14:12] == 7) begin
+                    if (loopy_v[9:5] == 29) begin
+                        loopy_v[9:5] <= 0;
+                        loopy_v[11] <= !loopy_v[11];
+                    end else begin
+                        loopy_v[9:5] <= loopy_v[9:5] + 1'd1;
+                    end
                 end
+            end
+
+            // Horizontal Reset at cycle 257
+            if (cycle == 256)
+                {loopy_v[10], loopy_v[4:0]} <= {loopy_t[10], loopy_t[4:0]};
+
+            // On cycle 256 of each scanline, copy horizontal bits from loopy_t into loopy_v
+            // On cycle 304 of the pre-render scanline, copy loopy_t into loopy_v
+            if (cycle == 304 && is_pre_render) begin
+                loopy_v <= loopy_t;
             end
         end
 
-        // Horizontal Reset at cycle 257
-        if (cycle == 256)
-            {loopy_v[10], loopy_v[4:0]} <= {loopy_t[10], loopy_t[4:0]};
-
-        // On cycle 256 of each scanline, copy horizontal bits from loopy_t into loopy_v
-        // On cycle 304 of the pre-render scanline, copy loopy_t into loopy_v
-        if (cycle == 304 && is_pre_render) begin
-            loopy_v <= loopy_t;
+        if (write && ain == 0) begin
+            loopy_t[10] <= din[0];
+            loopy_t[11] <= din[1];
+            ppu_incr <= din[2];
+        end else if (write && ain == 5) begin
+            if (!ppu_address_latch) begin
+                loopy_t[4:0] <= din[7:3];
+                loopy_x <= din[2:0];
+            end else begin
+                loopy_t[9:5] <= din[7:3];
+                loopy_t[14:12] <= din[2:0];
+            end
+            ppu_address_latch <= !ppu_address_latch;
+        end else if (write && ain == 6) begin
+            if (!ppu_address_latch) begin
+                loopy_t[13:8] <= din[5:0];
+                loopy_t[14] <= 0;
+            end else begin
+                loopy_t[7:0] <= din;
+                loopy_v <= {loopy_t[14:8], din};
+            end
+            ppu_address_latch <= !ppu_address_latch;
+        end else if (read && ain == 2) begin
+            ppu_address_latch <= 0; //Reset PPU address latch
+        end else if ((read || write) && ain == 7 && !is_rendering) begin
+            // Increment address every time we accessed a reg
+            loopy_v <= loopy_v + (ppu_incr ? 15'd32 : 15'd1);
         end
-    end
-
-    if (write && ain == 0) begin
-        loopy_t[10] <= din[0];
-        loopy_t[11] <= din[1];
-        ppu_incr <= din[2];
-    end else if (write && ain == 5) begin
-        if (!ppu_address_latch) begin
-            loopy_t[4:0] <= din[7:3];
-            loopy_x <= din[2:0];
-        end else begin
-            loopy_t[9:5] <= din[7:3];
-            loopy_t[14:12] <= din[2:0];
-        end
-        ppu_address_latch <= !ppu_address_latch;
-    end else if (write && ain == 6) begin
-        if (!ppu_address_latch) begin
-            loopy_t[13:8] <= din[5:0];
-            loopy_t[14] <= 0;
-        end else begin
-            loopy_t[7:0] <= din;
-            loopy_v <= {loopy_t[14:8], din};
-        end
-        ppu_address_latch <= !ppu_address_latch;
-    end else if (read && ain == 2) begin
-        ppu_address_latch <= 0; //Reset PPU address latch
-    end else if ((read || write) && ain == 7 && !is_rendering) begin
-        // Increment address every time we accessed a reg
-        loopy_v <= loopy_v + (ppu_incr ? 15'd32 : 15'd1);
     end
 end
 
@@ -477,6 +477,7 @@ endmodule  // SpriteAddressGen
 module BgPainter(
     input clk,
     input ce,
+    input reset,
     input enable,             // Shift registers activated
     input [2:0] cycle,
     input [2:0] fine_x_scroll,
@@ -495,40 +496,41 @@ reg [1:0] current_attribute_table; // Holds the 2 current attribute table bits
 reg [7:0] bg0;                     // Pixel data for last loaded background
 wire [7:0] bg1 =  vram_data;
 
-initial begin
-    playfield_pipe_1 = 0;
-    playfield_pipe_2 = 0;
-    playfield_pipe_3 = 0;
-    playfield_pipe_4 = 0;
-    current_name_table = 0;
-    current_attribute_table = 0;
-    bg0 = 0;
-end
+always @(posedge clk) begin
+    if (reset) begin
+        playfield_pipe_1 <= 0;
+        playfield_pipe_2 <= 0;
+        playfield_pipe_3 <= 0;
+        playfield_pipe_4 <= 0;
+        current_name_table <= 0;
+        current_attribute_table <= 0;
+        bg0 <= 0;
 
-always @(posedge clk) if (ce) begin
-    case (cycle[2:0])
-        1: current_name_table <= vram_data;
-        3: current_attribute_table <=
-            (!loopy[1] && !loopy[6]) ? vram_data[1:0] :
-            ( loopy[1] && !loopy[6]) ? vram_data[3:2] :
-            (!loopy[1] &&  loopy[6]) ? vram_data[5:4] :
-            vram_data[7:6];
+    end else if (ce) begin
+        case (cycle[2:0])
+            1: current_name_table <= vram_data;
+            3: current_attribute_table <=
+                (!loopy[1] && !loopy[6]) ? vram_data[1:0] :
+                ( loopy[1] && !loopy[6]) ? vram_data[3:2] :
+                (!loopy[1] &&  loopy[6]) ? vram_data[5:4] :
+                vram_data[7:6];
 
-        5: bg0 <= vram_data; // Pattern table bitmap #0
-        //7: bg1 <= vram_data; // Pattern table bitmap #1
-    endcase
+            5: bg0 <= vram_data; // Pattern table bitmap #0
+            //7: bg1 <= vram_data; // Pattern table bitmap #1
+        endcase
 
-    if (enable) begin
-        playfield_pipe_1[14:0] <= playfield_pipe_1[15:1];
-        playfield_pipe_2[14:0] <= playfield_pipe_2[15:1];
-        playfield_pipe_3[7:0] <= playfield_pipe_3[8:1];
-        playfield_pipe_4[7:0] <= playfield_pipe_4[8:1];
-        // Load the new values into the shift registers at the last pixel.
-        if (cycle[2:0] == 7) begin
-            playfield_pipe_1[15:8] <= {bg0[0], bg0[1], bg0[2], bg0[3], bg0[4], bg0[5], bg0[6], bg0[7]};
-            playfield_pipe_2[15:8] <= {bg1[0], bg1[1], bg1[2], bg1[3], bg1[4], bg1[5], bg1[6], bg1[7]};
-            playfield_pipe_3[8] <= current_attribute_table[0];
-            playfield_pipe_4[8] <= current_attribute_table[1];
+        if (enable) begin
+            playfield_pipe_1[14:0] <= playfield_pipe_1[15:1];
+            playfield_pipe_2[14:0] <= playfield_pipe_2[15:1];
+            playfield_pipe_3[7:0] <= playfield_pipe_3[8:1];
+            playfield_pipe_4[7:0] <= playfield_pipe_4[8:1];
+            // Load the new values into the shift registers at the last pixel.
+            if (cycle[2:0] == 7) begin
+                playfield_pipe_1[15:8] <= {bg0[0], bg0[1], bg0[2], bg0[3], bg0[4], bg0[5], bg0[6], bg0[7]};
+                playfield_pipe_2[15:8] <= {bg1[0], bg1[1], bg1[2], bg1[3], bg1[4], bg1[5], bg1[6], bg1[7]};
+                playfield_pipe_3[8] <= current_attribute_table[0];
+                playfield_pipe_4[8] <= current_attribute_table[1];
+            end
         end
     end
 end
@@ -625,9 +627,7 @@ module PPU(
     output [19:0] mapper_ppu_flags,
     output reg [2:0] emphasis,
     output       short_frame,
-    input  [1:0] mask,
-    input        vblank,
-    input        hblank
+    input  [1:0] mask
 );
 
 // These are stored in control register 0
@@ -642,19 +642,6 @@ reg playfield_clip;     // 0: Left side 8 pixels playfield clipping
 reg object_clip;        // 0: Left side 8 pixels object clipping
 
 reg enable_playfield, enable_objects;
-
-initial begin
-    obj_patt = 0;
-    bg_patt = 0;
-    obj_size = 0;
-    vbl_enable = 0;
-    grayscale = 0;
-    playfield_clip = 0;
-    object_clip = 0;
-    enable_playfield = 0;
-    enable_objects = 0;
-    emphasis = 0;
-end
 
 reg nmi_occured;         // True if NMI has occured but not cleared.
 reg [7:0] vram_latch;
@@ -700,6 +687,7 @@ wire [2:0] fine_x_scroll;
 LoopyGen loopy0(
     .clk           (clk),
     .ce            (ce),
+    .reset         (reset),
     .is_rendering  (is_rendering),
     .ain           (ain),
     .din           (din),
@@ -708,9 +696,7 @@ LoopyGen loopy0(
     .is_pre_render (is_pre_render_line),
     .cycle         (cycle),
     .loopy         (loopy),
-    .fine_x_scroll (fine_x_scroll),
-    .vblank        (vblank),
-    .hblank        (hblank)
+    .fine_x_scroll (fine_x_scroll)
 );
 
 // Set to true if the current ppu_addr pointer points into palette ram.
@@ -723,6 +709,7 @@ wire [3:0] bg_pixel_noblank;
 BgPainter bg_painter(
     .clk           (clk),
     .ce            (ce),
+    .reset         (reset),
     .enable        (!at_last_cycle_group),
     .cycle         (cycle[2:0]),
     .fine_x_scroll (fine_x_scroll),
@@ -879,36 +866,38 @@ assign color = (mask_right | mask_left | mask_pal) ? 6'h0E : (grayscale ? {color
 wire clear_nmi = (exiting_vblank | (read && ain == 2));
 wire set_nmi = entering_vblank & ~clear_nmi;
 
-always @(posedge clk)
-if (ce) begin
+always @(posedge clk) begin
     if (reset) begin
         {obj_patt, bg_patt, obj_size, vbl_enable} <= 0; // 2000 resets to 0
         {grayscale, playfield_clip, object_clip, enable_playfield, enable_objects, emphasis} <= 0; // 2001 resets to 0
         nmi_occured <= 0;
-    end else if (write) begin
-        case (ain)
-            0: begin // PPU Control Register 1
-                // t:....BA.. ........ = d:......BA
-                obj_patt <= din[3];
-                bg_patt <= din[4];
-                obj_size <= din[5];
-                vbl_enable <= din[7];
-            end
 
-            1: begin // PPU Control Register 2
-                grayscale <= din[0];
-                playfield_clip <= din[1];
-                object_clip <= din[2];
-                enable_playfield <= din[3];
-                enable_objects <= din[4];
-                emphasis <= |sys_type ? {din[7], din[5], din[6]} : din[7:5];
-            end
-        endcase
+    end else if (ce) begin
+        if (write) begin
+            case (ain)
+                0: begin // PPU Control Register 1
+                    // t:....BA.. ........ = d:......BA
+                    obj_patt <= din[3];
+                    bg_patt <= din[4];
+                    obj_size <= din[5];
+                    vbl_enable <= din[7];
+                end
+
+                1: begin // PPU Control Register 2
+                    grayscale <= din[0];
+                    playfield_clip <= din[1];
+                    object_clip <= din[2];
+                    enable_playfield <= din[3];
+                    enable_objects <= din[4];
+                    emphasis <= |sys_type ? {din[7], din[5], din[6]} : din[7:5];
+                end
+            endcase
+        end
+        if (set_nmi)
+            nmi_occured <= 1;
+        if (clear_nmi)
+            nmi_occured <= 0;
     end
-    if (set_nmi)
-        nmi_occured <= 1;
-    if (clear_nmi)
-        nmi_occured <= 0;
 end
 
 // If we're triggering a VBLANK NMI
@@ -935,67 +924,72 @@ reg [23:0] decay_low;
 reg refresh_high, refresh_low;
 
 always @(posedge clk) begin
-    if (refresh_high) begin
-        decay_high <= 3221590; // aprox 600ms decay rate
+    if (reset) begin
+        latched_dout <= 8'd0;
+        decay_high   <= 0;
         refresh_high <= 0;
-    end
-
-    if (refresh_low) begin
-        decay_low <= 3221590;
+        decay_low   <= 0;
         refresh_low <= 0;
-    end
 
-    if (ce) begin
-        if (decay_high != 0)
-            decay_high <= decay_high - 1'b1;
-        else
-            latched_dout[7:5] <= 3'b000;
+    end else begin
+        if (refresh_high) begin
+            decay_high <= 3221590; // aprox 600ms decay rate
+            refresh_high <= 0;
+        end
 
-        if (decay_low != 0)
-            decay_low <= decay_low - 1'b1;
-        else
-            latched_dout[4:0] <= 5'b00000;
+        if (refresh_low) begin
+            decay_low <= 3221590;
+            refresh_low <= 0;
+        end
 
-        if (read) begin
-            case (ain)
-                2: begin
-                    latched_dout <= {nmi_occured,
-                                    sprite0_hit_bg,
-                                    sprite_overflow,
-                                    latched_dout[4:0]};
-                    refresh_high <= 1'b1;
-                end
+        if (ce) begin
+            if (decay_high != 0)
+                decay_high <= decay_high - 1'b1;
+            else
+                latched_dout[7:5] <= 3'b000;
 
-                4: begin
-                    latched_dout <= oam_bus;
-                    refresh_high <= 1'b1;
-                    refresh_low <= 1'b1;
-                end
+            if (decay_low != 0)
+                decay_low <= decay_low - 1'b1;
+            else
+                latched_dout[4:0] <= 5'b00000;
 
-                7: if (is_pal_address) begin
-                        latched_dout <= {latched_dout[7:6], color};
-                        refresh_low <= 1'b1;
-                    end else begin
-                        latched_dout <= vram_latch;
+            if (read) begin
+                case (ain)
+                    2: begin
+                        latched_dout <= {nmi_occured,
+                                        sprite0_hit_bg,
+                                        sprite_overflow,
+                                        latched_dout[4:0]};
+                        refresh_high <= 1'b1;
+                    end
+
+                    4: begin
+                        latched_dout <= oam_bus;
                         refresh_high <= 1'b1;
                         refresh_low <= 1'b1;
                     end
-                default: latched_dout <= latched_dout;
-            endcase
 
-            if (reset)
-                latched_dout <= 8'd0;
+                    7: if (is_pal_address) begin
+                            latched_dout <= {latched_dout[7:6], color};
+                            refresh_low <= 1'b1;
+                        end else begin
+                            latched_dout <= vram_latch;
+                            refresh_high <= 1'b1;
+                            refresh_low <= 1'b1;
+                        end
+                    default: latched_dout <= latched_dout;
+                endcase
 
-        end else if (write) begin
-            refresh_high <= 1'b1;
-            refresh_low <= 1'b1;
-            latched_dout <= din;
+            end else if (write) begin
+                refresh_high <= 1'b1;
+                refresh_low <= 1'b1;
+                latched_dout <= din;
+            end
         end
     end
 end
 
 assign dout = latched_dout;
-
 
 assign mapper_ppu_flags = {scanline, cycle, obj_size, is_rendering};
 

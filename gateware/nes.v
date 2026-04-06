@@ -55,6 +55,7 @@ always @(posedge clk) begin
     spr_state <= 0;
     sprite_dma_lastval <= 0;
     sprite_dma_addr <= 0;
+
   end else if (ce) begin
     if (dmc_state == 0 && dmc_trigger && cpu_read && !odd_cycle) dmc_state <= 1;
     if (dmc_state == 1 && !odd_cycle) dmc_state <= 0;
@@ -112,10 +113,7 @@ module NES(
   input         ext_audio,
 
   output        cpu_ce,
-  output        ppu_ce,
-
-  input         vblank,
-  input         hblank
+  output        ppu_ce
 );
 
 
@@ -332,9 +330,7 @@ PPU ppu (
   .mapper_ppu_flags(mapper_ppu_flags),
   .emphasis        (emphasis),
   .short_frame     (),
-  .mask            (mask),
-  .vblank          (vblank),
-  .hblank          (hblank)
+  .mask            (mask)
 );
 
 /**********************************************************/
@@ -415,17 +411,18 @@ assign ppumem_dout  = chr_from_ppu;
 reg [7:0] open_bus_data;
 
 always @(posedge clk) begin
-  open_bus_data <= from_data_bus;
+  if (reset)
+    open_bus_data <= 0;
+  else
+    open_bus_data <= from_data_bus;
 end
 
 assign from_data_bus = raw_data_bus;
 
 reg [7:0] raw_data_bus;
 
-always @* begin
-  if (reset)
-    raw_data_bus = 0;
-  else if (apu_cs) begin
+always @(*) begin
+  if (apu_cs) begin
     if (joypad1_cs)
       raw_data_bus = {open_bus_data[7:5], joypad1_data};
     else if (joypad2_cs)

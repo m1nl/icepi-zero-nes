@@ -99,9 +99,13 @@ module nes_top #(
 );
 
 localparam integer SYS_CLK_FREQ = 50000;
-localparam integer NES_CLK_FREQ = 21487;  // adjusted to match hsync with hdmi framebuffer
+localparam integer NES_CLK_FREQ = 21475;  // calculated with timing.py
 
 localparam integer NES_CLOCK_COUNTER_WIDTH = $clog2(SYS_CLK_FREQ + NES_CLK_FREQ + 1);
+
+localparam VIDEO_SYNC_LOST = 0;
+localparam VIDEO_SYNC_WAIT = 1;
+localparam VIDEO_SYNC_DONE = 2;
 
 wire nes_clock_en;
 wire nes_en;
@@ -110,6 +114,9 @@ wire cpu_ce;
 wire ppu_ce;
 
 wire stall;
+wire zero_pixel;
+
+reg zero_pixel_r;
 
 reg cpu_mem_busy;
 reg ppu_mem_busy;
@@ -119,12 +126,16 @@ reg ppu_mem_ready;
 
 reg [NES_CLOCK_COUNTER_WIDTH-1:0] nes_clock_counter;
 
-reg [7:0] nes_lost_ticks;
+reg [9:0] nes_lost_ticks;
+reg [9:0] nes_lost_ticks_next;
+
+reg [1:0] video_sync_state;
+reg [6:0] video_adjust;  // accoding to timing.py, we'll be lagging by 40 ticks (1 unit = 0.5 tick)
 
 assign stall = ((cpu_mem_pending || cpu_ce) && !cpu_mem_ready) || ((ppu_mem_pending || ppu_ce) && !ppu_mem_ready);
 
 assign nes_clock_en = nes_clock_counter >= SYS_CLK_FREQ;
-assign nes_en       = (nes_clock_en || nes_lost_ticks != 0) && !stall;
+assign nes_en       = (nes_clock_en || nes_lost_ticks != 0) && !stall && video_sync_state != VIDEO_SYNC_WAIT;
 
 always @(posedge clk) begin
   if (rst || nes_reset) begin
@@ -138,19 +149,27 @@ always @(posedge clk) begin
   end
 end
 
-always @(posedge clk) begin
-  if (rst || nes_reset) begin
-    nes_lost_ticks <= 0;
+always @(*) begin
+  nes_lost_ticks_next = nes_lost_ticks;
 
-  end else if (nes_clock_en) begin
+  if (nes_clock_en) begin
     if (stall && !(&nes_lost_ticks))
-      nes_lost_ticks <= nes_lost_ticks + 1;
+      nes_lost_ticks_next = nes_lost_ticks_next + 1;
 
   end else begin
-    if (!stall && nes_lost_ticks != 0)
-      nes_lost_ticks <= nes_lost_ticks - 1;
-
+    if (!stall && (|nes_lost_ticks))
+      nes_lost_ticks_next = nes_lost_ticks_next - 1;
   end
+
+  if (zero_pixel && !zero_pixel_r)
+    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[6:1]};
+end
+
+always @(posedge clk) begin
+  if (rst || nes_reset || video_sync_state == VIDEO_SYNC_WAIT)
+    nes_lost_ticks <= 0;
+  else
+    nes_lost_ticks <= nes_lost_ticks_next;
 end
 
 wire [5:0] color;
@@ -232,9 +251,7 @@ NES nes_0 (
   .audio_channels(5'b11111),
   .mask(2'b11),
   .int_audio(int_audio),
-  .ext_audio(ext_audio),
-  .vblank(),
-  .hblank()
+  .ext_audio(ext_audio)
 );
 
 always @(*) begin
@@ -397,7 +414,25 @@ iir_biquad iir_biquad_0 (
   .out(audio_sample_tmds_filtered)
 );
 
+// frame width and height values are calculated
+// with timing.py to ensure hdmi will never
+// overtake ppu when reading from from frame buffer
+// in the visible area; during vblank hdmi eventually
+// catches-up but later video sync fsm ensures ppu
+// is ahead of hdmi by increasing number of missing
+// ticks; eventually both NES and hdmi are synced to
+// the original NTSC NES framerate (60.0988 Hz)
 hdmi #(
+  .VIDEO_ID_CODE(2),  // 720x480
+  .FRAME_WIDTH(859),
+  .FRAME_HEIGHT(523),
+  .SCREEN_WIDTH(720),
+  .SCREEN_HEIGHT(480),
+  .HSYNC_PULSE_START(16),
+  .HSYNC_PULSE_SIZE(62),
+  .VSYNC_PULSE_START(9),
+  .VSYNC_PULSE_SIZE(6),
+  .INVERT(1),
   .VENDOR_NAME(64'h4e45530000000000),  // NES
   .PRODUCT_DESCRIPTION(128'h4e455300000000000000000000000000),  // NES
   .SOURCE_DEVICE_INFORMATION(8'h08)  // Game
@@ -412,9 +447,7 @@ hdmi #(
   .cy(cy),
   .tmds_0(tmds_0),
   .tmds_1(tmds_1),
-  .tmds_2(tmds_2),
-  .hblank(),
-  .vblank()
+  .tmds_2(tmds_2)
 );
 
 wire usb_dm_i [0:1];
@@ -660,7 +693,54 @@ always @(posedge clk) begin
   end
 end
 
-assign leds = {&(nes_lost_ticks), usb_oe[1], usb_oe[0], 1'b0, 1'b0};
+cdc_sync #(
+  .N(1)
+) cdc_zero_pixel_0 (
+  .clk_dst(clk),
+  .rst_dst(rst),
+  .in(cx == 0 && cy == 0),
+  .out(zero_pixel)
+);
+
+// sync hdmi output to ppu video output
+// ---
+// ppu is few scanlines ahead of hdmi
+// timing.py calculations ensure frame rate
+// is same as in original NTSC NES
+always @(posedge clk) begin
+  if (rst || nes_reset) begin
+    video_sync_state <= VIDEO_SYNC_LOST;
+    video_adjust     <= 0;
+
+  end else begin
+    zero_pixel_r <= zero_pixel;
+
+    case (video_sync_state)
+      VIDEO_SYNC_LOST: begin
+        if (scanline == 2 && cycle == 0)
+          video_sync_state <= VIDEO_SYNC_WAIT;
+      end
+      VIDEO_SYNC_WAIT: begin
+        if (zero_pixel && !zero_pixel_r)
+          video_sync_state <= VIDEO_SYNC_DONE;
+      end
+      VIDEO_SYNC_DONE: begin
+        if (zero_pixel && !zero_pixel_r) begin
+          if (scanline == 2 && cycle == 0)
+            video_adjust <= video_adjust;  // no-op
+          else if (scanline < 2 && !(&video_adjust))
+            video_adjust <= video_adjust + 1;
+          else if (scanline < 4 && (|video_adjust))
+            video_adjust <= video_adjust - 1;
+          else
+            video_sync_state <= VIDEO_SYNC_LOST;
+        end
+      end
+    endcase
+  end
+end
+
+assign leds = {usb_oe[1], usb_oe[0], &(nes_lost_ticks), video_sync_state != VIDEO_SYNC_DONE, nes_reset};
 
 endmodule
 `default_nettype wire

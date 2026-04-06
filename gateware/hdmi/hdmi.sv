@@ -23,7 +23,7 @@ module hdmi
     // Defaults to minimum bit lengths required to represent positions.
     // Modify these parameters if you have alternate desired bit lengths.
     parameter BIT_WIDTH = VIDEO_ID_CODE < 4 ? 10 : VIDEO_ID_CODE == 4 ? 11 : 12,
-    parameter BIT_HEIGHT = VIDEO_ID_CODE == 16 ? 11: 10,
+    parameter BIT_HEIGHT = VIDEO_ID_CODE == 16 ? 11 : 10,
 
     // A true HDMI signal sends auxiliary data (i.e. audio, preambles) which prevents it from being parsed by DVI signal sinks.
     // HDMI signal sinks are fortunately backwards-compatible with DVI signals.
@@ -57,8 +57,22 @@ module hdmi
     // You probably don't need to change these parameters if you are
     // generating a signal from scratch instead of processing an
     // external signal.
-    parameter START_X = 0,
-    parameter START_Y = 0
+    parameter [BIT_WIDTH-1:0] START_X = 0,
+    parameter [BIT_HEIGHT-1:0] START_Y = 0,
+
+    parameter [BIT_WIDTH-1:0] FRAME_WIDTH = 859,
+    parameter [BIT_WIDTH-1:0] FRAME_HEIGHT = 523,
+
+    parameter [BIT_HEIGHT-1:0] SCREEN_WIDTH = 720,
+    parameter [BIT_HEIGHT-1:0] SCREEN_HEIGHT = 480,
+
+    parameter [BIT_WIDTH-1:0] HSYNC_PULSE_START = 16,
+    parameter [BIT_WIDTH-1:0] HSYNC_PULSE_SIZE = 62,
+
+    parameter [BIT_HEIGHT-1:0] VSYNC_PULSE_START = 9,
+    parameter [BIT_HEIGHT-1:0] VSYNC_PULSE_SIZE = 6,
+
+    parameter INVERT = 1
 )
 (
     input clk_pixel,
@@ -77,131 +91,22 @@ module hdmi
     // They are used (by you) to pick the color each pixel should have
     // i.e. always @(posedge pixel_clk) rgb <= {8'd0, 8'(cx), 8'(cy)};
     output reg [BIT_WIDTH-1:0] cx,
-    output reg [BIT_HEIGHT-1:0] cy,
-
-    // The screen is at the upper left corner of the frame.
-    // 0,0 = 0,0 in video
-    // the frame includes extra space for sending auxiliary data
-    output [BIT_WIDTH-1:0] frame_width,
-    output [BIT_HEIGHT-1:0] frame_height,
-    output [BIT_WIDTH-1:0] screen_width,
-    output [BIT_HEIGHT-1:0] screen_height,
-
-    // Indicates if we're in the blanking period
-    output reg hblank,
-    output reg vblank
+    output reg [BIT_HEIGHT-1:0] cy
 );
 
 reg hsync;
 reg vsync;
 
-wire [BIT_WIDTH-1:0] hsync_pulse_start, hsync_pulse_size;
-wire [BIT_HEIGHT-1:0] vsync_pulse_start, vsync_pulse_size;
-wire invert;
-
-// See CEA-861-D for more specifics formats described below.
-generate
-    case (VIDEO_ID_CODE)
-        1:
-        begin
-            assign frame_width = 800;
-            assign frame_height = 525;
-            assign screen_width = 640;
-            assign screen_height = 480;
-            assign hsync_pulse_start = 16;
-            assign hsync_pulse_size = 96;
-            assign vsync_pulse_start = 10;
-            assign vsync_pulse_size = 2;
-            assign invert = 1;
-            end
-        2, 3:
-        begin
-            assign frame_width = 857;  // adjusted to better match NES hsync
-            assign frame_height = 525;
-            assign screen_width = 720;
-            assign screen_height = 480;
-            assign hsync_pulse_start = 16;
-            assign hsync_pulse_size = 62;
-            assign vsync_pulse_start = 9;
-            assign vsync_pulse_size = 6;
-            assign invert = 1;
-            end
-        4:
-        begin
-            assign frame_width = 1650;
-            assign frame_height = 750;
-            assign screen_width = 1280;
-            assign screen_height = 720;
-            assign hsync_pulse_start = 110;
-            assign hsync_pulse_size = 40;
-            assign vsync_pulse_start = 5;
-            assign vsync_pulse_size = 5;
-            assign invert = 0;
-        end
-        16, 34:
-        begin
-            assign frame_width = 2200;
-            assign frame_height = 1125;
-            assign screen_width = 1920;
-            assign screen_height = 1080;
-            assign hsync_pulse_start = 88;
-            assign hsync_pulse_size = 44;
-            assign vsync_pulse_start = 4;
-            assign vsync_pulse_size = 5;
-            assign invert = 0;
-        end
-        17, 18:
-        begin
-            assign frame_width = 864;
-            assign frame_height = 625;
-            assign screen_width = 720;
-            assign screen_height = 576;
-            assign hsync_pulse_start = 12;
-            assign hsync_pulse_size = 64;
-            assign vsync_pulse_start = 5;
-            assign vsync_pulse_size = 5;
-            assign invert = 1;
-        end
-        19:
-        begin
-            assign frame_width = 1980;
-            assign frame_height = 750;
-            assign screen_width = 1280;
-            assign screen_height = 720;
-            assign hsync_pulse_start = 440;
-            assign hsync_pulse_size = 40;
-            assign vsync_pulse_start = 5;
-            assign vsync_pulse_size = 5;
-            assign invert = 0;
-        end
-        95, 105, 97, 107:
-        begin
-            assign frame_width = 4400;
-            assign frame_height = 2250;
-            assign screen_width = 3840;
-            assign screen_height = 2160;
-            assign hsync_pulse_start = 176;
-            assign hsync_pulse_size = 88;
-            assign vsync_pulse_start = 8;
-            assign vsync_pulse_size = 10;
-            assign invert = 0;
-        end
-    endcase
-endgenerate
-
 always @(*) begin
-    hsync = invert ^ (cx >= screen_width + hsync_pulse_start && cx < screen_width + hsync_pulse_start + hsync_pulse_size);
+    hsync = INVERT ^ (cx >= SCREEN_WIDTH + HSYNC_PULSE_START && cx < SCREEN_WIDTH + HSYNC_PULSE_START + HSYNC_PULSE_SIZE);
     // vsync pulses should begin and end at the start of hsync, so special
     // handling is required for the lines on which vsync starts and ends
-    if (cy == screen_height + vsync_pulse_start - 1)
-        vsync = invert ^ (cx >= screen_width + hsync_pulse_start);
-    else if (cy == screen_height + vsync_pulse_start + vsync_pulse_size - 1)
-        vsync = invert ^ (cx < screen_width + hsync_pulse_start);
+    if (cy == SCREEN_HEIGHT + VSYNC_PULSE_START - 1)
+        vsync = INVERT ^ (cx >= SCREEN_WIDTH + HSYNC_PULSE_START);
+    else if (cy == SCREEN_HEIGHT + VSYNC_PULSE_START + VSYNC_PULSE_SIZE - 1)
+        vsync = INVERT ^ (cx < SCREEN_WIDTH + HSYNC_PULSE_START);
     else
-        vsync = invert ^ (cy >= screen_height + vsync_pulse_start && cy < screen_height + vsync_pulse_start + vsync_pulse_size);
-
-    hblank = cx >= screen_width;
-    vblank = cy >= screen_height;
+        vsync = INVERT ^ (cy >= SCREEN_HEIGHT + VSYNC_PULSE_START && cy < SCREEN_HEIGHT + VSYNC_PULSE_START + VSYNC_PULSE_SIZE);
 end
 
 localparam integer VIDEO_RATE = (VIDEO_ID_CODE == 1 ? 25200000
@@ -230,8 +135,8 @@ begin
     end
     else
     begin
-        cx <= cx == frame_width-1'b1 ? 0 : cx + 1'b1;
-        cy <= cx == frame_width-1'b1 ? cy == frame_height-1'b1 ? 0 : cy + 1'b1 : cy;
+        cx <= cx == FRAME_WIDTH-1 ? 0 : cx + 1;
+        cy <= cx == FRAME_WIDTH-1 ? cy == FRAME_HEIGHT-1 ? 0 : cy + 1 : cy;
     end
 end
 
@@ -242,7 +147,7 @@ begin
     if (reset)
         video_data_period <= 0;
     else
-        video_data_period <= cx < screen_width && cy < screen_height;
+        video_data_period <= cx < SCREEN_WIDTH && cy < SCREEN_HEIGHT;
 end
 
 reg [2:0] mode;
@@ -264,8 +169,8 @@ generate
             end
             else
             begin
-                video_guard <= (cx >= frame_width - 2) && cx < frame_width && (cy == frame_height - 1 || cy < screen_height - 1 /* no VG at end of last line */);
-                video_preamble <= (cx >= frame_width - 10) && (cx < frame_width - 2) && (cy == frame_height - 1 || cy < screen_height - 1 /* no VP at end of last line */);
+                video_guard <= (cx >= FRAME_WIDTH - 2) && cx < FRAME_WIDTH && (cy == FRAME_HEIGHT - 1 || cy < SCREEN_HEIGHT - 1 /* no VG at end of last line */);
+                video_preamble <= (cx >= FRAME_WIDTH - 10) && (cx < FRAME_WIDTH - 2) && (cy == FRAME_HEIGHT - 1 || cy < SCREEN_HEIGHT - 1 /* no VP at end of last line */);
             end
         end
 
@@ -273,13 +178,13 @@ generate
         wire [31:0] max_num_packets_alongside;
         wire [4:0] num_packets_alongside;
 
-        assign max_num_packets_alongside = (frame_width - screen_width  /* VD period */ - 2 /* V guard */ - 8 /* V preamble */ - 4 /* Min V control period */ - 2 /* DI trailing guard */ - 2 /* DI leading guard */ - 8 /* DI premable */ - 4 /* Min DI control period */) / 32;
+        assign max_num_packets_alongside = (FRAME_WIDTH - SCREEN_WIDTH  /* VD period */ - 2 /* V guard */ - 8 /* V preamble */ - 4 /* Min V control period */ - 2 /* DI trailing guard */ - 2 /* DI leading guard */ - 8 /* DI premable */ - 4 /* Min DI control period */) / 32;
         assign num_packets_alongside = (max_num_packets_alongside > 18) ? 5'd18 : max_num_packets_alongside[4:0];
 
         wire data_island_period_instantaneous;
-        assign data_island_period_instantaneous = num_packets_alongside > 0 && cx >= screen_width + 14 && cx < screen_width + 14 + num_packets_alongside * 32;
+        assign data_island_period_instantaneous = num_packets_alongside > 0 && cx >= SCREEN_WIDTH + 14 && cx < SCREEN_WIDTH + 14 + num_packets_alongside * 32;
         wire packet_enable;
-        assign packet_enable = data_island_period_instantaneous && ((cx + screen_width + 18) & 5'h1f) == 5'd0;
+        assign packet_enable = data_island_period_instantaneous && ((cx + SCREEN_WIDTH + 18) & 5'h1f) == 5'd0;
 
         reg data_island_guard;
         reg data_island_preamble;
@@ -295,10 +200,10 @@ generate
             else
             begin
                 data_island_guard <= num_packets_alongside > 0 && (
-                    (cx >= screen_width + 12 && cx < screen_width + 14) /* leading guard */ ||
-                    (cx >= screen_width + 14 + num_packets_alongside * 32 && cx < screen_width + 14 + num_packets_alongside * 32 + 2) /* trailing guard */
+                    (cx >= SCREEN_WIDTH + 12 && cx < SCREEN_WIDTH + 14) /* leading guard */ ||
+                    (cx >= SCREEN_WIDTH + 14 + num_packets_alongside * 32 && cx < SCREEN_WIDTH + 14 + num_packets_alongside * 32 + 2) /* trailing guard */
                 );
-                data_island_preamble <= num_packets_alongside > 0 && cx >= screen_width + 4 && cx < screen_width + 12;
+                data_island_preamble <= num_packets_alongside > 0 && cx >= SCREEN_WIDTH + 4 && cx < SCREEN_WIDTH + 12;
                 data_island_period <= data_island_period_instantaneous;
             end
         end
@@ -307,7 +212,7 @@ generate
         wire [23:0] header;
         wire [55:0] sub_0, sub_1, sub_2, sub_3;
         wire video_field_end;
-        assign video_field_end = cx == screen_width - 1'b1 && cy == screen_height - 1'b1;
+        assign video_field_end = cx == SCREEN_WIDTH - 1 && cy == SCREEN_HEIGHT - 1;
         wire [4:0] packet_pixel_counter;
 
         packet_picker #(
