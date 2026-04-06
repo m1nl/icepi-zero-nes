@@ -151,13 +151,12 @@ The SDRAM controller runs at 100 MHz (2x system clock) to provide sufficient ban
 
 ### Audio Processing
 - **Clock domain isolation**: Audio runs entirely in the TMDS clock domain (27 MHz), CDC is moved out of HDMI core
-- **DC blocking**: Implemented by subtracting bias (0x7FFF) from the unsigned NES audio samples
 - **20 kHz Butterworth filter**: Removes high-frequency artifacts while preserving NES audio character
 - **HDMI integration**: Audio samples are packed into HDMI data islands at 48 kHz
 
 ### Video Pipeline
-- **Framebuffer design**: Eliminates screen tearing and simplifies HDMI timing
-- **Scaling choice (2.4x H, 2x V)**: Produces 720x480 output that's compatible with most HDMI displays
+- **Framebuffer design**: Generates stable HDMI signal with valid timing
+- **Scaling choice (2.5x H, 2x V)**: Produces 720x480 output that's compatible with most HDMI displays
 - **Fixed HDMI timing**: Always outputs stable 720x480@60Hz regardless of NES PPU state
 
 ### NES Core Integration
@@ -190,7 +189,7 @@ This project contains components under various open-source licenses:
 
 ## Acknowledgments
 
-- cheyao for the [IcePi-Zero](https://github.com/cheyao/icepi-zero) board design
+- [cheyao](https://github.com/cheyao) for the [IcePi-Zero](https://github.com/cheyao/icepi-zero) board design
 - The [MiSTer NES](https://github.com/MiSTer-devel/NES_MiSTer) project and its contributors
 - Gideon Zweijtzer for [6502n](https://github.com/GideonZ/1541ultimate/tree/master/fpga/6502n/vhdl_source) CPU implementation
 - Ludvig Strigeus for the [original FPGA NES](https://github.com/strigeus/fpganes) implementation
