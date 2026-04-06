@@ -34,26 +34,36 @@ module framebuffer (
 
 localparam PIPELINE_DELAY = 4;
 
+wire ena;
+
 reg  [5:0] mem [0:256 * 240 - 1];
 reg [23:0] palette_lut  [0:63];
 reg  [1:0] palette_luma [0:63];
 
-wire        ena;
-wire [15:0] offset;
-
 reg  [3:0] ena_r;
 reg  [9:0] cy_r;
-reg [15:0] offset_r;
+reg  [7:0] offset;
+reg  [1:0] counter;
 
-assign ena    = cx >= (39 - PIPELINE_DELAY) && cx <= (679 - PIPELINE_DELAY) && cy < 480;
-assign offset = ({6'b0, cx} - (38 - PIPELINE_DELAY)) * 102;
+assign ena = cx >= (39 - PIPELINE_DELAY) && cx < (679 - PIPELINE_DELAY) && cy < 480;
 
 // 0
 
+// 1 : 2.5 scaler
+
 always @(posedge clk_pixel) begin
-  ena_r    <= {ena_r[2:0], ena};
-  cy_r     <= cy;
-  offset_r <= offset;
+  if (ena && !ena_r[0]) begin
+    offset  <= 0;
+    counter <= 2;
+  end else if (counter != 0)
+    counter <= counter - 1;
+  else begin
+    offset  <= offset + 1;
+    counter <= offset[0] ? 2 : 1;
+  end
+
+  ena_r <= {ena_r[2:0], ena};
+  cy_r  <= cy;
 end
 
 // 1
@@ -62,7 +72,7 @@ wire [15:0] addra;
 
 reg [5:0] dout;
 
-assign addra = {cy_r[8:1], 8'b0} + {8'b0, offset_r[15:8]};
+assign addra = {cy_r[8:1], offset};
 
 always @(posedge clk_pixel) begin
   if (ena_r[0])
@@ -196,8 +206,9 @@ initial begin
   palette_lut[62] = 24'h000000; palette_lut[63] = 24'h000000;
 end
 
-// 0.75
+// 0.75 (luma.py)
 // [1 1 1 1 1 1 1 1 1 1 1 1 1 0 0 0 2 1 1 1 1 1 1 1 1 1 1 1 1 0 0 0 3 2 2 2 2 2 2 2 2 2 2 2 2 1 0 0 3 2 2 2 2 2 2 2 2 2 2 2 2 2 0 0]
+
 initial begin
   palette_luma[0] = 2'd1; palette_luma[1] = 2'd1;
   palette_luma[2] = 2'd1; palette_luma[3] = 2'd1;

@@ -119,6 +119,8 @@ def verilog_lut_init(array, reg_name="palette_luma", bit_width=2, cols=2):
 
 
 if __name__ == "__main__":
+    target = 0.75
+
     luma = luma_from_rgb(palette_lut)
     lowest_error = -1
     result = None
@@ -158,7 +160,7 @@ if __name__ == "__main__":
                 luma_b = luma_from_rgb(b)
                 diff_2 = luma_a - luma_b
 
-                error += (diff_1 * 0.75 - diff_2) ** 2
+                error += (diff_1 * target - diff_2) ** 2
 
         if (error < lowest_error) or lowest_error == -1:
             lowest_error = error
