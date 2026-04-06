@@ -402,18 +402,18 @@ end else begin
 					5'b01_01_?: chr_bank_3 <= prg_din;  // Select 1 KB CHR bank at PPU $1800-$1BFF
 					5'b01_10_?: chr_bank_4 <= prg_din;  // Select 1 KB CHR bank at PPU $1800-$1BFF
 					5'b01_11_?: chr_bank_5 <= prg_din;  // Select 1 KB CHR bank at PPU $1C00-$1FFF
-	
+
 					5'b10_00_1: irq_latch <= prg_din ^ 8'hFF;              // IRQ latch ($C000-$DFFC)
 					5'b10_01_1: {irq_reload, irq_reg} <= 8'b10000000;      // IRQ reload ($C001-$DFFD)
 					5'b10_10_1: irq_enable <= 1;                           // IRQ enable ($C002-$DFFE)
 					5'b10_11_1: irq_enable <= 0;                           // IRQ disable ($C003-$DFFF)
-	
+
 					5'b11_00_1: mirroring <= !prg_din[6];  // Mirroring
 				endcase
 			end else begin
 				casez({prg_ain[14:13], prg_ain[0]})
 					3'b00_0: {bank_select} <= {prg_din[2:0]}; // Bank select ($8000-$9FFE)
-	
+
 					3'b01_0: begin // Bank data ($A000-$BFFF)
 						case (bank_select)
 						0: prg_bank_0 <= prg_din;       // Select 8 KB PRG ROM bank at $8000-$9FFF (or $C000-$DFFF);
@@ -426,11 +426,11 @@ end else begin
 						7: chr_bank_5 <= prg_din;       // Select 1 KB CHR bank at PPU $1C00-$1FFF (or $0C00-$0FFF);
 						endcase
 					end
-	
+
 					3'b11_0: mirroring <= !prg_din[0];  // Mirroring ($E000-$FFFE)
 				endcase
 			end
-	
+
 			if (mapper154)
 				mirroring <= !prg_din[6];
 			if (DxROM || mapper76 || mapper88)
@@ -458,7 +458,7 @@ end else begin
 				5'b1100_1: prg_bank_2[5:0] <= prg_din[7:2];  // Select 8 KB PRG ROM bank at $C000-$DFFF
 			endcase
 		end
-	
+
 		if (mapper268 && prg_write && ({mapper268_5k,prg_ain[15:12]}==5'h6 || {mapper268_5k,prg_ain[15:12]}==5'h15)) begin
 			if (prg_ain[2:0]==3'h2) begin
 				m268_reg[2][3:0] <= prg_din[3:0];
@@ -468,32 +468,32 @@ end else begin
 				m268_reg[prg_ain[2:0]] <= prg_din;
 			end
 		end
-	
+
 		// For Mapper 47
 		// $6000-7FFF:  [.... ...B]  Block select
 		if (prg_write && prg_is_ram)
 			mapper47_multicart <= prg_din[0];
-	
+
 		// For Mapper 37 and 205
 		// $6000-7FFF:  [.... .QBB]  Block select
 		if (prg_write && prg_is_ram)
 			mapper37_multicart <= prg_din[2:0];
-	
+
 		// Mapper 189
 		// $4120-7FFF:  [AAAA BBBB] A,B:  PRG Reg
 		if (prg_write && prg_ain[15:14] == 2'b01 && prg_ain[8] && mapper189)
 			mapper189_prgsel <= (prg_din[7:4] | prg_din[3:0]); // Select 32 KB PRG ROM bank at $8000-$FFFF
-	
+
 		// Mapper 208
 		// $4800-4FFF or 6800-6FFF:  [..mP ...P] :  mirror PRG Reg
 		if (prg_write && prg_ain[15:14] == 2'b01 && !prg_ain[12] && prg_ain[11] && mapper208)
 			{mirroring, mapper189_prgsel[1:0]} <= {!prg_din[5], prg_din[4], prg_din[0]}; // Select 32 KB PRG ROM bank at $8000-$FFFF
-	
+
 		// Mapper 208
 		// $5000-57FF: Prot index
 		if (prg_write && prg_ain[15:11] == 5'b01010 && mapper208)
 			m268_reg[4] <= prg_din;
-	
+
 		// Mapper 208
 		// $5800-5FFF: Prot index
 		if (prg_write && prg_ain[15:11] == 5'b01011 && mapper208)
@@ -535,7 +535,7 @@ end else begin
 		if ((acclaim && (!last_a12 && chr_ain_o[12]) && (a12_ctr == 6)) ||
 			(~acclaim && (!last_a12 && chr_ain_o[12]) && (a12_ctr == 0))) begin
 			counter <= new_counter;
-	
+
 			// MMC Scanline
 			if ( (!mmc3_alt_behavior || counter != 0 || irq_reload) && new_counter == 0 && irq_enable && irq_support) begin
 				irq_reg[0] <= 1;
@@ -835,7 +835,7 @@ end else begin
 		last_a12 <= chr_ain_o[12];
 		if ((!last_a12 && chr_ain_o[12]) && (a12_ctr == 0)) begin
 			counter <= new_counter;
-	
+
 			// MMC Scanline
 			if ( (counter != 0 || irq_reload) && new_counter == 0 && irq_enable) begin
 				irq <= 1;
@@ -993,7 +993,7 @@ end else begin
 				3'b11?: bank_reg[prg_din[7:6]] <= prg_din[5:0];    // Bank select din[7:6] ($E000-$EFFE)
 			endcase
 		end
-	
+
 		misc_inc <= 0;
 		old_misc_inc <= misc_inc;
 		if (prg_read && prg_is_misc)
@@ -1014,7 +1014,7 @@ end else begin
 		last_a12 <= chr_ain_o[12];
 		if ((!last_a12 && chr_ain_o[12]) && (a12_ctr == 0)) begin
 			counter <= new_counter;
-	
+
 			// MMC Scanline
 			if ( (counter != 0 || irq_reload) && new_counter == 0 && irq_enable) begin
 				irq_reg[0] <= 1;
@@ -1037,7 +1037,7 @@ always @* begin
 		5'b011?_?: prgsel = bank_reg[0]; // $6000 =$E000, $00
 		5'b100?_?: prgsel = bank_reg[1]; // $8000 =$E000, $40
 		5'b101?_?: prgsel = bank_reg[2]; // $A000 =$E000, $80
-//		5'b1100_?: prgsel = 6'b000011;   // $C000 misc - not used 
+//		5'b1100_?: prgsel = 6'b000011;   // $C000 misc - not used
 		5'b110?_?: prgsel = 6'b000011;   // $D000 fixed to 0x7 ({prgsel[5:0],prg_ain[11]} = 7)
 		5'b111?_?: prgsel = 6'b000100;   // $E000 fixed to 0x8-9
 	endcase

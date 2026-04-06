@@ -321,7 +321,7 @@ end
 wire [9:0] exram_read_addr = extended_ram_mode[1] ? prg_ain[9:0] : insplit ? split_addr : chr_ain[9:0];
 
 always @(posedge clk) begin
-    if (enable) begin
+    if (ce && enable) begin
         last_read_ram <= expansion_ram[exram_read_addr];
 
         if ((ppu_cycle[2] == 0) && (ppu_cycle[1] == 0) && ppu_in_frame) begin

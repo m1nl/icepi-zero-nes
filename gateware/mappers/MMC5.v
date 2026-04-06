@@ -269,7 +269,7 @@ module MMC5 (
 		else
 			chr_dout = last_read_vram;
 	always @(posedge clk)
-		if (enable) begin
+		if (ce && enable) begin
 			last_read_ram <= expansion_ram[exram_read_addr];
 			if (((ppu_cycle[2] == 0) && (ppu_cycle[1] == 0)) && ppu_in_frame)
 				last_read_exattr <= last_read_ram;

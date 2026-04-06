@@ -66,7 +66,6 @@ module MMC1 (
 	reg [4:0] chr_bank_1;
 	reg [4:0] prg_bank;
 	reg delay_ctrl;
-	reg chr_write_disable;
 	wire [3:0] prg_ram_size = flags[29:26];
 	wire [3:0] prg_nvram_size = flags[34:31];
 	wire [2:0] chr_size = flags[13:11];
@@ -76,32 +75,30 @@ module MMC1 (
 			control <= 5'b01100;
 			chr_bank_0 <= 0;
 			chr_bank_1 <= 0;
-			prg_bank <= 5'b10000;
+			prg_bank <= 5'b00000;
 			delay_ctrl <= 0;
 		end
 		else if (ce) begin
-			if (prg_write && prg_ain[15]) begin
+			if (!prg_write)
+				delay_ctrl <= 1'b0;
+			if ((prg_write && prg_ain[15]) && !delay_ctrl) begin
 				delay_ctrl <= 1'b1;
 				if (prg_din[7]) begin
 					shift <= 5'b10000;
 					control <= control | 5'b01100;
 				end
-				else if (!delay_ctrl) begin
-					if (shift[0]) begin
-						casez (prg_ain[14:13])
-							0: control <= {prg_din[0], shift[4:1]};
-							1: chr_bank_0 <= {prg_din[0], shift[4:1]};
-							2: chr_bank_1 <= {prg_din[0], shift[4:1]};
-							3: prg_bank <= {prg_din[0], shift[4:1]};
-						endcase
-						shift <= 5'b10000;
-					end
-					else
-						shift <= {prg_din[0], shift[4:1]};
+				else if (shift[0]) begin
+					casez (prg_ain[14:13])
+						0: control <= {prg_din[0], shift[4:1]};
+						1: chr_bank_0 <= {prg_din[0], shift[4:1]};
+						2: chr_bank_1 <= {prg_din[0], shift[4:1]};
+						3: prg_bank <= {prg_din[0], shift[4:1]};
+					endcase
+					shift <= 5'b10000;
 				end
+				else
+					shift <= {prg_din[0], shift[4:1]};
 			end
-			else
-				delay_ctrl <= 1'b0;
 		end
 	reg [3:0] prgsel;
 	always @(*)

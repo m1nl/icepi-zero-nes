@@ -73,7 +73,6 @@ reg [4:0] chr_bank_1;
 reg [4:0] prg_bank;
 
 reg delay_ctrl;	// used to prevent fast-write to the control register
-reg chr_write_disable;
 
 wire [3:0] prg_ram_size = flags[29:26];
 wire [3:0] prg_nvram_size = flags[34:31];
@@ -86,15 +85,17 @@ always @(posedge clk)
 		control <= 5'b0_11_00;
 		chr_bank_0 <= 0;
 		chr_bank_1 <= 0;
-		prg_bank <= 5'b10000;
+		prg_bank <= 5'b00000;
 		delay_ctrl <= 0;
-	end else if (ce) begin // M2
-		if (prg_write && prg_ain[15]) begin // /ROMSEL && /CPURnW
+	end else if (ce) begin
+		if (!prg_write)
+			delay_ctrl <= 1'b0;
+		if (prg_write && prg_ain[15] && !delay_ctrl) begin
 			delay_ctrl <= 1'b1;
 			if (prg_din[7]) begin
-				shift <= 5'b10000;  // Shift and Control are reset, nothing else
+				shift <= 5'b10000;
 				control <= control | 5'b0_11_00;
-			end else if (!delay_ctrl) begin // Only clocked if DIN bit 7 is not set, and this is the first falling edge of rw during M2
+			end else begin
 				if (shift[0]) begin
 					casez(prg_ain[14:13])
 						0: control    <= {prg_din[0], shift[4:1]};
@@ -107,8 +108,6 @@ always @(posedge clk)
 					shift <= {prg_din[0], shift[4:1]};
 				end
 			end
-		end else begin
-			delay_ctrl <= 1'b0;
 		end
 	end
 
