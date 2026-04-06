@@ -35,13 +35,15 @@
 #define INES_MAGIC_3 0x1A
 
 #define PRG_ROM_BASE (MAIN_RAM_BASE + 0x0000000U)
+#define INT_RAM_BASE (MAIN_RAM_BASE + 0x0E00000U)
+#define PRG_RAM_BASE (MAIN_RAM_BASE + 0x0F00000U)
 #define CHR_ROM_BASE (MAIN_RAM_BASE + 0x0800400U)
+
 #define PRG_PAGE_SIZE 16384
 #define CHR_PAGE_SIZE 8192
 
-/* Offsets mirror game_loader.v S_CLEARRAM addresses */
-#define CLEARRAM_GEN_OFF 0x380000 /* general:  1 MB work RAM */
-#define CLEARRAM_GEN_LEN 0xFFFFFU
+#define INT_RAM_SIZE 2048
+#define PRG_RAM_SIZE 32768
 
 static FATFS fs;
 
@@ -127,35 +129,35 @@ static uint64_t compute_mapper_flags(const ines_header_t *h) {
     return flags;
 }
 
-static int nes_load(const char *path, uint64_t *mapper_flags_out) {
-    FIL fil;
+static int nes_load(const char *path, const char *save_path, uint64_t *mapper_flags_out) {
+    FIL nes;
     FRESULT res;
     UINT br;
     ines_header_t hdr;
 
-    res = f_open(&fil, path, FA_READ);
+    res = f_open(&nes, path, FA_READ);
     if (res != FR_OK) {
         printf("nes_load: cannot open '%s' (err %d)\n", path, res);
         return -1;
     }
 
-    res = f_read(&fil, &hdr, sizeof(hdr), &br);
+    res = f_read(&nes, &hdr, sizeof(hdr), &br);
     if (res != FR_OK || br != sizeof(hdr)) {
         printf("nes_load: header read failed\n");
-        f_close(&fil);
+        f_close(&nes);
         return -1;
     }
 
     if (hdr.magic[0] != INES_MAGIC_0 || hdr.magic[1] != INES_MAGIC_1 || hdr.magic[2] != INES_MAGIC_2 ||
         hdr.magic[3] != INES_MAGIC_3) {
         printf("nes_load: not an iNES file\n");
-        f_close(&fil);
+        f_close(&nes);
         return -1;
     }
 
     if (hdr.flags6 & 0x04) {
         printf("nes_load: trainer present, not supported\n");
-        f_close(&fil);
+        f_close(&nes);
         return -1;
     }
 
@@ -177,10 +179,10 @@ static int nes_load(const char *path, uint64_t *mapper_flags_out) {
 
     while (remaining > 0) {
         UINT chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
-        res = f_read(&fil, buf, chunk, &br);
+        res = f_read(&nes, buf, chunk, &br);
         if (res != FR_OK || br == 0) {
             printf("nes_load: read error after %lu bytes\n", (unsigned long)(prg_bytes - remaining));
-            f_close(&fil);
+            f_close(&nes);
             return -1;
         }
         uintptr_t addr = (uintptr_t)dst;
@@ -204,10 +206,10 @@ static int nes_load(const char *path, uint64_t *mapper_flags_out) {
 
         while (remaining > 0) {
             UINT chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
-            res = f_read(&fil, buf, chunk, &br);
+            res = f_read(&nes, buf, chunk, &br);
             if (res != FR_OK || br == 0) {
                 printf("nes_load: CHR read error after %lu bytes\n", (unsigned long)(chr_bytes - remaining));
-                f_close(&fil);
+                f_close(&nes);
                 return -1;
             }
             uintptr_t addr = (uintptr_t)dst;
@@ -223,31 +225,42 @@ static int nes_load(const char *path, uint64_t *mapper_flags_out) {
         }
     }
 
-    f_close(&fil);
+    f_close(&nes);
 
     uint64_t flags = compute_mapper_flags(&hdr);
     if (mapper_flags_out)
         *mapper_flags_out = flags;
 
     uint8_t mapper = (uint8_t)(flags & 0xFF);
+    uint8_t has_saves = (uint8_t)(flags >> 25) & 0x1;
 
-    uint8_t *p = (uint8_t *)(PRG_ROM_BASE + CLEARRAM_GEN_OFF);
-    remaining = CLEARRAM_GEN_LEN;
+    uint8_t *p = (uint8_t *)INT_RAM_BASE;
+    remaining = INT_RAM_SIZE;
 
     while (remaining > 0) {
-        memset(p, 0x00, 0x3ff);
-        p += 0x1000;
-        remaining -= 0x3ff;
+        memset(p, 0x00, 0x400);
+        p += 0x400;
+        remaining -= 0x400;
     }
 
-    printf("nes_load: cleared %u bytes at 0x%08lx (work RAM)\n", CLEARRAM_GEN_LEN,
-           (unsigned long)(PRG_ROM_BASE + CLEARRAM_GEN_OFF));
+    printf("nes_load: cleared %u bytes at 0x%08lx (internal RAM)\n", INT_RAM_SIZE, (unsigned long)INT_RAM_BASE);
+
+    p = (uint8_t *)PRG_RAM_BASE;
+    remaining = PRG_RAM_SIZE;
+
+    while (remaining > 0) {
+        memset(p, 0x00, 0x400);
+        p += 0x400;
+        remaining -= 0x400;
+    }
+
+    printf("nes_load: cleared %u bytes at 0x%08lx (PRG RAM)\n", PRG_RAM_SIZE, (unsigned long)PRG_RAM_BASE);
 
     flush_cpu_dcache();
     flush_l2_cache();
 
     printf("nes_load: done, mapper_flags=0x%016llx\n", (unsigned long long)flags);
-    printf("  mapper=%u prg_pages=%u chr_pages=%u\n", mapper, hdr.prg_pages, hdr.chr_pages);
+    printf("  mapper=%u has_saves=%u prg_pages=%u chr_pages=%u\n", mapper, has_saves, hdr.prg_pages, hdr.chr_pages);
 
     return 0;
 }
@@ -265,7 +278,7 @@ void nes_loader_cmd(const char *path) {
         return;
     }
 
-    if (nes_load(path, &mapper_flags) == 0) {
+    if (nes_load(path, NULL, &mapper_flags) == 0) {
         nes_control_mapper_flags_write(mapper_flags);
         printf("mapper_flags written: 0x%016llx\n", (unsigned long long)mapper_flags);
         uint64_t rb = nes_control_mapper_flags_read();
