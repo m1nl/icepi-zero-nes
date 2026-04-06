@@ -84,16 +84,12 @@ Defined in `gateware/nes_top.py` as `NESControl(LiteXModule)`, exposed at SoC le
 |----------------------------|-------|--------------|----------------|---------------------------------|
 | `nes_control_mapper_flags` | 64    | 0            | 0x1000         | mapper_flags passed to NES core |
 | `nes_control_nes_reset`    | 1     | 1            | 0x1008         | 1=hold NES in reset, 0=run      |
-| `nes_control_prg_mask`     | 10    | 0b1111111111 | 0x100c         | PRG address mask (10-bit)       |
-| `nes_control_chr_mask`     | 10    | 0b1111111111 | 0x1010         | CHR address mask (10-bit)       |
 | `nes_control_cpu_last_addr`| 25    | 0            | 0x1014         | Last SDRAM address issued by NES CPU (read-only) |
 | `nes_control_ppu_last_addr`| 25    | 0            | 0x1018         | Last SDRAM address issued by NES PPU (read-only) |
 
 Generated accessor functions in `csr.h`:
 - `nes_control_mapper_flags_write(uint64_t)` — writes both 32-bit halves
 - `nes_control_nes_reset_write(uint32_t)`
-- `nes_control_prg_mask_write(uint32_t)`
-- `nes_control_chr_mask_write(uint32_t)`
 - `nes_control_cpu_last_addr_read()` — returns last CPU SDRAM address (offset from MAIN_RAM_BASE)
 - `nes_control_ppu_last_addr_read()` — returns last PPU SDRAM address (offset from MAIN_RAM_BASE)
 
@@ -184,22 +180,6 @@ Sequence (`nes_loader_cmd`):
 Entry point: `nes_loader_cmd(const char *path)` — called from `main.c` via `load_prg <path>` command.
 Public prototype declared in `firmware/nes_loader.h`.
 
-# PRG/CHR Mask Computation
-
-`prg_mask` and `chr_mask` are 10-bit values mirroring `game_loader.v`'s `mask()` function:
-
-```
-mask[i] = (size_in_2kb_pages > 2^i)
-```
-
-Size derivation:
-- **iNES 1.0 PRG**: `prg_pages * 16384` bytes → `>> 11` for 2KB pages
-- **NES 2.0 PRG exponent-multiplier** (when `flags9[3:0] == 0xF`): `(mul*2+1) << exp` bytes
-- **iNES 1.0 CHR**: `chr_pages * 8192` bytes → `>> 11` for 2KB pages
-- **CHR RAM** (when `chr_size2 == 0`): iNES 1.0 = 8KB; NES 2.0 = `64 << flags11[3:0]` bytes
-
-Note: `firmware/nes_loader.c` does **not** currently call `nes_control_prg_mask_write` or `nes_control_chr_mask_write` — only `nes_control_mapper_flags_write` is written in `nes_loader_cmd`.
-
 # Bare-Metal C Library Limitations (picolibc-minimal)
 
 The demo app links against picolibc-minimal, which is missing many standard functions. Known missing symbols:
@@ -230,10 +210,6 @@ Glob `platform.add_source(gateware_dir, "cdc", "*.v")` picks up all CDC modules 
 ## `cdc_sync.v`
 - 2-stage synchronizer, N-wide (default N=1), with `rst_dst`
 - `(* ASYNC_REG = "TRUE" *)` on both stages
-
-## `cdc_sync_gray.v`
-- Gray-code 2-stage synchronizer, N-wide (default N=3)
-- Binary→Gray encode on src side; generic Gray→Binary decode via `generate` on dst side
 
 ## `cdc_handshake.v`
 - 4-phase handshake for single data word transfer across clock domains
@@ -331,10 +307,8 @@ hdmi_0
 
 ### `dc_blocker` (`gateware/dc_blocker.v`)
 - Ports: `clk`, `reset`, `in_valid`, `in_ready`, `out_ready`, `out_valid`, `in [17:0]`, `out [17:0]`
-- No `ce` port (was removed)
 - First-order IIR: `y[n] = x[n] - x[n-1] + alpha*y[n-1]`, alpha = 1 - 2^-10 (~7.4 Hz corner at 48 kHz)
 - 20-bit internal accumulator with saturation; `in_ready = !out_valid || out_ready`
-- **Not currently instantiated in `nes_top.v`** — dc blocking is done upstream via bias subtraction
 
 ### `iir_biquad` (`gateware/iir_filter.v`)
 - Ports: `clk`, `reset`, `in_valid`, `in_ready`, `out_ready`, `out_valid`, `in [17:0]`, `out [17:0]`
