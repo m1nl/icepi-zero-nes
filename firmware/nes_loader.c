@@ -129,6 +129,14 @@ static uint64_t compute_mapper_flags(const ines_header_t *h) {
     return flags;
 }
 
+static void clear_ram(uint8_t* p, uint32_t remaining) {
+    while (remaining > 0) {
+        memset(p, 0x00, 0x400);
+        p += 0x400;
+        remaining -= 0x400;
+    }
+}
+
 static int nes_load(const char *path, const char *save_path, uint64_t *mapper_flags_out) {
     FIL nes;
     FRESULT res;
@@ -223,6 +231,10 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
             dst += br;
             remaining -= br;
         }
+
+    } else {
+        clear_ram((uint8_t *)CHR_ROM_BASE, CHR_PAGE_SIZE);
+        printf("nes_load: cleared %u bytes at 0x%08lx (CHR ROM / RAM)\n", CHR_PAGE_SIZE, (unsigned long)CHR_ROM_BASE);
     }
 
     f_close(&nes);
@@ -234,26 +246,10 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
     uint8_t mapper = (uint8_t)(flags & 0xFF);
     uint8_t has_saves = (uint8_t)(flags >> 25) & 0x1;
 
-    uint8_t *p = (uint8_t *)INT_RAM_BASE;
-    remaining = INT_RAM_SIZE;
-
-    while (remaining > 0) {
-        memset(p, 0x00, 0x400);
-        p += 0x400;
-        remaining -= 0x400;
-    }
-
+    clear_ram((uint8_t *)INT_RAM_BASE, INT_RAM_SIZE);
     printf("nes_load: cleared %u bytes at 0x%08lx (internal RAM)\n", INT_RAM_SIZE, (unsigned long)INT_RAM_BASE);
 
-    p = (uint8_t *)PRG_RAM_BASE;
-    remaining = PRG_RAM_SIZE;
-
-    while (remaining > 0) {
-        memset(p, 0x00, 0x400);
-        p += 0x400;
-        remaining -= 0x400;
-    }
-
+    clear_ram((uint8_t *)PRG_RAM_BASE, PRG_RAM_SIZE);
     printf("nes_load: cleared %u bytes at 0x%08lx (PRG RAM)\n", PRG_RAM_SIZE, (unsigned long)PRG_RAM_BASE);
 
     flush_cpu_dcache();
