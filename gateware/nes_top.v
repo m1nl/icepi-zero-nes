@@ -451,6 +451,8 @@ wire game_y_usb [0:1];
 wire game_sel_usb [0:1];
 wire game_sta_usb [0:1];
 
+wire [3:0] game_extra_usb [0:1];
+
 wire [3:0] usb_rom_dout [0:1];
 wire [9:0] usb_rom_addr [0:1];
 wire       usb_rom_en   [0:1];
@@ -500,7 +502,8 @@ usb_hid_host #(
   .game_x(game_x_usb[0]),
   .game_y(game_y_usb[0]),
   .game_sel(game_sel_usb[0]),
-  .game_sta(game_sta_usb[0])
+  .game_sta(game_sta_usb[0]),
+  .game_extra(game_extra_usb[0])
 );
 
 usb_hid_host #(
@@ -531,7 +534,8 @@ usb_hid_host #(
   .game_x(game_x_usb[1]),
   .game_y(game_y_usb[1]),
   .game_sel(game_sel_usb[1]),
-  .game_sta(game_sta_usb[1])
+  .game_sta(game_sta_usb[1]),
+  .game_extra(game_extra_usb[1])
 );
 
 wire [9:0] game [0:1];
@@ -555,7 +559,7 @@ cdc_handshake #(
   .rst_src(usb_rst),
   .data_in({game_y_usb[0], game_x_usb[0], game_r_usb[0], game_l_usb[0],
             game_d_usb[0], game_u_usb[0], game_sta_usb[0], game_sel_usb[0],
-            game_b_usb[0] ,game_a_usb[0]}),
+            game_b_usb[0] || (|game_extra_usb[0][3:2]), game_a_usb[0] || |(game_extra_usb[0][1:0])}),
   .send(usb_full_report[0]),
   .busy(),
   .clk_dst(clk),
@@ -571,7 +575,7 @@ cdc_handshake #(
   .rst_src(usb_rst),
   .data_in({game_y_usb[1], game_x_usb[1], game_r_usb[1], game_l_usb[1],
             game_d_usb[1], game_u_usb[1], game_sta_usb[1], game_sel_usb[1],
-            game_b_usb[1] ,game_a_usb[1]}),
+            game_b_usb[1] || (|game_extra_usb[1][3:2]), game_a_usb[0] || (|game_extra_usb[1][1:0])}),
   .send(usb_full_report[1]),
   .busy(),
   .clk_dst(clk),
