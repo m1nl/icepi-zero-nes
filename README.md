@@ -129,9 +129,10 @@ Connect via serial at 115200 baud:
 
 | Offset     | Description |
 |------------|-------------|
-| 0x40000000 | PRG ROM (CPU data) |
-| 0x40800400 | CHR ROM (PPU data) |
-| 0x40380000 | Work RAM |
+| 0x40000000 | PRG ROM |
+| 0x40E00000 | Internal RAM |
+| 0x40F00000 | PRG RAM |
+| 0x40800400 | CHR ROM and PPU VRAM |
 | 0x41000000 | Firmware code |
 
 ### Key Components

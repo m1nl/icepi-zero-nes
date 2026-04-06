@@ -47,11 +47,13 @@ Use `Instance()` in a `LiteXModule`/`Module` subclass, map signals with `o_`/`i_
 
 Addresses are offsets from `MAIN_RAM_BASE` (mirrors `game_loader.v`):
 
-| Region      | Offset      | Notes                         |
-|-------------|-------------|-------------------------------|
-| PRG ROM     | 0x0000000   | loaded by CPU                 |
-| CHR ROM     | 0x0800400   | loaded by CPU                 |
-| Work RAM    | 0x0380000   | cleared (0xFFFFF bytes)       |
+| Offset     | Description |
+|------------|-------------|
+| 0x40000000 | PRG ROM |
+| 0x40E00000 | Internal RAM |
+| 0x40F00000 | PRG RAM |
+| 0x40800400 | CHR ROM and PPU VRAM |
+| 0x41000000 | Firmware code |
 
 # iNES / NES 2.0 Header Parsing
 
