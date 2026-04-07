@@ -5,7 +5,7 @@ A complete NES implementation for the IcePi-Zero FPGA board, featuring HDMI outp
 ## Features
 
 - **Full NES emulation** running on FPGA hardware at cycle-accurate timing
-- **HDMI video output** at 720x480 resolution with 2.4x horizontal and 2x vertical scaling
+- **HDMI video output** at 720x480 resolution with 2.5x horizontal and 2x vertical scaling
 - **48 kHz audio** with filtering via HDMI
 - **USB gamepad support** for two controllers (USB 1.1, including X-Input and 8BitDo devices)
 - **SD card ROM loading** with automatic ROM rotation via gamepad controls
@@ -159,6 +159,8 @@ The SDRAM controller runs at 100 MHz (2x system clock) to provide sufficient ban
 - **Framebuffer design**: Generates stable HDMI signal with valid timing
 - **Scaling choice (2.5x H, 2x V)**: Produces 720x480 output that's compatible with most HDMI displays
 - **Fixed HDMI timing**: Always outputs stable 720x480@60Hz regardless of NES PPU state
+- **Luma-blending**: Helps with non-integer scaling and provides clean transition between pixels
+- **PPU <-> HDMI vsync**: Ensures PPU output is in sync with HDMI frame
 
 ### NES Core Integration
 - **Black box approach**: NES core is instantiated as Verilog within LiteX, maintaining clean interfaces
