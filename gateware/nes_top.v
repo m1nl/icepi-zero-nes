@@ -118,6 +118,9 @@ wire zero_pixel;
 
 reg zero_pixel_r;
 
+reg cpu_mem_pending;
+reg ppu_mem_pending;
+
 reg cpu_mem_busy;
 reg ppu_mem_busy;
 
@@ -132,7 +135,7 @@ reg [9:0] nes_lost_ticks_next;
 reg [1:0] video_sync_state;
 reg [6:0] video_adjust;  // accoding to timing.py, we'll be lagging by 40 ticks (1 unit = 0.5 tick)
 
-assign stall = ((cpu_mem_pending || cpu_ce) && !cpu_mem_ready) || ((ppu_mem_pending || ppu_ce) && !ppu_mem_ready);
+assign stall = (cpu_ce && !cpu_mem_ready) || (ppu_ce && !ppu_mem_ready);
 
 assign nes_clock_en = nes_clock_counter >= SYS_CLK_FREQ;
 assign nes_en       = (nes_clock_en || nes_lost_ticks != 0) && !stall && video_sync_state != VIDEO_SYNC_WAIT;
@@ -192,9 +195,6 @@ wire [1:0] joypad_clock;
 wire [4:0] joypad1_data;
 wire [4:0] joypad2_data;
 
-wire cpu_mem_pending;
-wire ppu_mem_pending;
-
 wire  [9:0] cx;
 wire  [9:0] cy;
 wire [23:0] rgb;
@@ -209,15 +209,6 @@ reg [7:0] cpumem_din_r;
 
 reg [7:0] ppumem_din;
 reg [7:0] ppumem_din_r;
-
-reg cpumem_read_r;
-reg cpumem_write_r;
-
-reg ppumem_read_r;
-reg ppumem_write_r;
-
-assign cpu_mem_pending = (cpumem_read && !cpumem_read_r) || (cpumem_write && !cpumem_write_r);
-assign ppu_mem_pending = (ppumem_read && !ppumem_read_r) || (ppumem_write && !ppumem_write_r);
 
 assign int_audio = 1;  // for VCR6
 assign ext_audio = (mapper_flags[7:0] == 19) || (mapper_flags[7:0] == 24) || (mapper_flags[7:0] == 26);
@@ -261,6 +252,9 @@ always @(*) begin
   cpu_mem_wdata_we = 1'b1;
   ppu_mem_wdata_we = 1'b1;
 
+  cpu_mem_pending = (cpumem_read || cpumem_write) && !cpu_mem_cmd_valid;
+  ppu_mem_pending = (ppumem_read || ppumem_write) && !ppu_mem_cmd_valid;
+
   cpu_mem_busy = cpu_mem_cmd_valid || cpu_mem_wdata_valid || cpu_mem_rdata_ready;
   ppu_mem_busy = ppu_mem_cmd_valid || ppu_mem_wdata_valid || ppu_mem_rdata_ready;
 
@@ -273,24 +267,15 @@ end
 
 always @(posedge clk) begin
   if (rst) begin
-    cpumem_read_r       <= 1'b0;
-    cpumem_write_r      <= 1'b0;
     cpu_mem_cmd_valid   <= 1'b0;
     cpu_mem_wdata_valid <= 1'b0;
     cpu_mem_rdata_ready <= 1'b0;
 
-    ppumem_read_r       <= 1'b0;
-    ppumem_write_r      <= 1'b0;
     ppu_mem_cmd_valid   <= 1'b0;
     ppu_mem_wdata_valid <= 1'b0;
     ppu_mem_rdata_ready <= 1'b0;
 
   end else begin
-    if (!cpu_mem_pending || !cpu_mem_busy) begin
-      cpumem_read_r  <= cpumem_read;
-      cpumem_write_r <= cpumem_write;
-    end
-
     if (cpu_mem_busy) begin
       if (cpu_mem_wdata_ready)
         cpu_mem_wdata_valid <= 1'b0;
@@ -314,11 +299,6 @@ always @(posedge clk) begin
       cpu_mem_cmd_we      <= cpumem_write;
       cpu_mem_wdata_data  <= cpumem_dout;
       cpu_mem_wdata_valid <= cpumem_write;
-    end
-
-    if (!ppu_mem_pending || !ppu_mem_busy) begin
-      ppumem_read_r  <= ppumem_read;
-      ppumem_write_r <= ppumem_write;
     end
 
     if (ppu_mem_busy) begin

@@ -337,7 +337,7 @@ PPU ppu (
 /*************             Cart             ***************/
 /**********************************************************/
 
-wire prg_allow /* synthesis syn_keep=1 */, prg_bus_write, prg_conflict, prg_conflict_d0, vram_a10, vram_ce, chr_allow;
+wire prg_allow, prg_bus_write, prg_conflict, prg_conflict_d0, vram_a10, vram_ce, chr_allow;
 wire [21:0] prg_linaddr, chr_linaddr;
 wire [7:0] prg_dout_mapper, chr_from_ppu_mapper;
 wire has_chr_from_ppu_mapper;
