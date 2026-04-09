@@ -42,6 +42,7 @@
 static char **rom_list = NULL;
 static int rom_count = 0;
 static int rom_current = -1;
+static int rom_next = -1;
 static FATFS fs;
 
 static int str_icmp(const char *a, const char *b) {
@@ -229,7 +230,7 @@ static void load_current(void) {
 #define EV_PREVIOUS_ROM (1 << 1)
 #define EV_RESET_ROM (1 << 2)
 
-void rom_rotator_isr(void) {
+static void rom_rotator_isr(void) {
     uint32_t pending = nes_control_ev_pending_read();
     nes_control_ev_pending_write(pending);
 
@@ -238,16 +239,11 @@ void rom_rotator_isr(void) {
     }
 
     if (pending & EV_NEXT_ROM) {
-        save_current();
-        rom_current = (rom_current + 1) % rom_count;
-        load_current();
+        rom_next = (rom_current + 1) % rom_count;
     } else if (pending & EV_PREVIOUS_ROM) {
-        save_current();
-        rom_current = (rom_current - 1 + rom_count) % rom_count;
-        load_current();
+        rom_next = (rom_current - 1 + rom_count) % rom_count;
     } else if (pending & EV_RESET_ROM) {
-        save_current();
-        load_current();
+        rom_next = -1;
     }
 }
 
@@ -257,8 +253,22 @@ void rom_rotator_init(void) {
     if (scan_roms() <= 0)
         return;
 
-    rom_current = 0;
-    load_current();
+    irq_attach(NES_CONTROL_INTERRUPT, rom_rotator_isr);
+    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
 
+    rom_next = 0;
     nes_control_ev_enable_write(EV_NEXT_ROM | EV_PREVIOUS_ROM | EV_RESET_ROM);
+}
+
+void rom_rotator_service(void) {
+    if (rom_count > 0 && rom_next != rom_current) {
+        fputc('\n', stdout);
+
+        if (rom_next == -1)
+            rom_next = rom_current;
+
+        save_current();
+        rom_current = rom_next;
+        load_current();
+    }
 }

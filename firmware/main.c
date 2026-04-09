@@ -205,7 +205,7 @@ static void console_service(void) {
         debug_mem_cmd();
     else if (strcmp(token, "hexdump") == 0)
         hexdump_cmd(str);
-    else
+    else if (*token != '\0')
         printf("unknown command\n");
     prompt();
 }
@@ -220,13 +220,11 @@ int main(void) {
     help();
     rom_rotator_init();
 
-    irq_attach(NES_CONTROL_INTERRUPT, rom_rotator_isr);
-    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
-
     prompt();
 
     while (1) {
         console_service();
+        rom_rotator_service();
     }
 
     return 0;

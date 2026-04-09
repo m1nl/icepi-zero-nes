@@ -51,6 +51,8 @@
 static FATFS fs;
 static uint8_t buf[512];
 
+static volatile uint8_t mutex;
+
 typedef struct {
     uint8_t magic[4];
     uint8_t prg_pages; /* 16 KB units */
@@ -134,6 +136,24 @@ static uint64_t compute_mapper_flags(const ines_header_t *h) {
     return flags;
 }
 
+static int lock(void) {
+    int saved_ie = irq_getie();
+
+    irq_setie(0);
+
+    if (mutex) {
+        irq_setie(saved_ie);
+        return 0;
+    }
+
+    mutex = 1;
+    irq_setie(saved_ie);
+
+    return 1;
+}
+
+static void unlock(void) { mutex = 0; }
+
 static void clear_ram(uint8_t *p, uint32_t remaining) {
     while (remaining > 0) {
         uintptr_t addr = (uintptr_t)p;
@@ -163,13 +183,15 @@ static int nes_load(const char *path, const char *save_path) {
 
     int ret = -1;
     int mounted = 0;
-    int saved_ie = irq_getie();
 
-    irq_setie(0);
+    if (!lock()) {
+        printf("nes_load: unable to acquire lock\n");
+        return -1;
+    }
 
     res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
-        printf("sdcard mount failed (err %d)\n", res);
+        printf("nes_load: sdcard mount failed (err %d)\n", res);
         goto exit;
     }
 
@@ -332,10 +354,10 @@ exit:
     busy_wait_us(10000);
 
     if (ret == 0) {
-    nes_control_nes_reset_write(0);
+        nes_control_nes_reset_write(0);
     }
 
-    irq_setie(saved_ie);
+    unlock();
 
     return ret;
 }
@@ -350,13 +372,15 @@ int nes_save(const char *save_path) {
 
     int mounted = 0;
     int ret = -1;
-    int saved_ie = irq_getie();
 
-    irq_setie(0);
+    if (!lock()) {
+        printf("nes_save: unable to acquire lock\n");
+        return -1;
+    }
 
     res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
-        printf("sdcard mount failed (err %d)\n", res);
+        printf("nes_save: sdcard mount failed (err %d)\n", res);
         goto exit;
     }
 
@@ -422,7 +446,7 @@ exit:
     }
 
     nes_control_nes_pause_write(0);
-    irq_setie(saved_ie);
+    unlock();
 
     return ret;
 }
@@ -437,7 +461,7 @@ int sdcard_ls(const char *path) {
 
     res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
-        printf("sdcard mount failed (err %d)\n", res);
+        printf("sdcard_ls: sdcard mount failed (err %d)\n", res);
         goto exit;
     }
 
@@ -446,7 +470,7 @@ int sdcard_ls(const char *path) {
     const char *dirpath = (*path == '\0') ? "/" : path;
     res = f_opendir(&dir, dirpath);
     if (res != FR_OK) {
-        printf("ls: cannot open '%s' (err %d)\n", dirpath, res);
+        printf("sdcard_ls: cannot open '%s' (err %d)\n", dirpath, res);
         goto exit;
     }
 
