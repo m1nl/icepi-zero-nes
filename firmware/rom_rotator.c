@@ -33,7 +33,7 @@
 #include "nes_loader.h"
 #include "rom_rotator.h"
 
-#define ROM_NAME_MAX 64
+#define ROM_NAME_MAX 128
 #define ROM_DIR "/roms"
 #define ROM_EXT ".nes"
 #define SAVE_DIR "/saves"
@@ -238,6 +238,11 @@ static void rom_rotator_isr(void) {
         return;
     }
 
+    if (rom_current == -1) {
+        rom_next = 0;
+        return;
+    }
+
     if (pending & EV_NEXT_ROM) {
         rom_next = (rom_current + 1) % rom_count;
     } else if (pending & EV_PREVIOUS_ROM) {
@@ -247,7 +252,10 @@ static void rom_rotator_isr(void) {
     }
 }
 
-void rom_rotator_discard(void) { rom_current = -1; }
+void rom_rotator_discard(void) {
+    rom_current = -1;
+    rom_next = -1;
+}
 
 void rom_rotator_init(void) {
     if (scan_roms() <= 0)
@@ -256,18 +264,25 @@ void rom_rotator_init(void) {
     irq_attach(NES_CONTROL_INTERRUPT, rom_rotator_isr);
     irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
 
+    rom_current = -1;
     rom_next = 0;
+
     nes_control_ev_enable_write(EV_NEXT_ROM | EV_PREVIOUS_ROM | EV_RESET_ROM);
 }
 
 void rom_rotator_service(void) {
-    if (rom_count > 0 && rom_next != rom_current) {
+    if (rom_count <= 0)
+        return;
+
+    if (rom_next != rom_current) {
         fputc('\n', stdout);
+
+        if (rom_current != -1)
+            save_current();
 
         if (rom_next == -1)
             rom_next = rom_current;
 
-        save_current();
         rom_current = rom_next;
         load_current();
     }

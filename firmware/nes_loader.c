@@ -48,8 +48,10 @@
 #define INT_RAM_SIZE 2048
 #define PRG_RAM_SIZE 32768
 
+#define BUF_SIZE 512
+
 static FATFS fs;
-static uint8_t buf[512];
+static uint8_t buf[BUF_SIZE];
 
 static volatile uint8_t mutex;
 
@@ -480,7 +482,7 @@ int sdcard_ls(const char *path) {
         if (res != FR_OK || fno.fname[0] == '\0')
             break;
         if (fno.fattrib & AM_DIR)
-            printf("  [DIR]  %s\n", fno.fname);
+            printf("     [DIR]  %s\n", fno.fname);
         else
             printf("  %8lu  %s\n", (unsigned long)fno.fsize, fno.fname);
     }
