@@ -22,12 +22,15 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "nes_loader.h"
 #include <generated/csr.h>
 #include <generated/mem.h>
-#include <libfatfs/ff.h>
-#include <liblitesdcard/sdcard.h>
+#include <irq.h>
 #include <system.h>
+
+#include "ff.h"
+#include "spisdcard.h"
+
+#include "nes_loader.h"
 
 #define INES_MAGIC_0 0x4E /* 'N' */
 #define INES_MAGIC_1 0x45 /* 'E' */
@@ -46,6 +49,7 @@
 #define PRG_RAM_SIZE 32768
 
 static FATFS fs;
+static uint8_t buf[512];
 
 typedef struct {
     uint8_t magic[4];
@@ -85,10 +89,11 @@ static uint64_t compute_mapper_flags(const ines_header_t *h) {
     uint8_t chrram_shift = h->flags11 & 0x0F;
     int has_chr_ram = nes20 ? (chrram_shift != 0) : (chrrom == 0);
 
-    uint8_t prgram = nes20 ? (h->flags10 & 0x0F) : 0;
-    uint8_t prg_nvram = nes20 ? ((h->flags10 >> 4) & 0x0F) : 0;
     int has_saves = (h->flags6 >> 1) & 1;
     int piano = nes20 && ((h->flags15 & 0x3F) == 0x19);
+
+    uint8_t prgram = nes20 ? (h->flags10 & 0x0F) : 0;
+    uint8_t prg_nvram = nes20 ? ((h->flags10 >> 4) & 0x0F) : (has_saves ? 9 : 0); // assume 32KiB NVRAM for iNES 1.0
     uint8_t timing = nes20 ? (h->flags12 & 0x03) : 0;
 
     /* prg_size 3-bit encoding (same as game_loader.v) */
@@ -129,45 +134,75 @@ static uint64_t compute_mapper_flags(const ines_header_t *h) {
     return flags;
 }
 
-static void clear_ram(uint8_t* p, uint32_t remaining) {
+static void clear_ram(uint8_t *p, uint32_t remaining) {
     while (remaining > 0) {
+        uintptr_t addr = (uintptr_t)p;
+        if ((addr & 0xc00) != 0) {
+            addr += 0x1000;
+            addr &= ~0xc00;
+        }
+        p = (uint8_t *)addr;
         memset(p, 0x00, 0x400);
-        p += 0x400;
+        p += 0x1000;
         remaining -= 0x400;
     }
 }
 
-static int nes_load(const char *path, const char *save_path, uint64_t *mapper_flags_out) {
+uint32_t prg_nvram_size(uint64_t mapper_flags) {
+    uint8_t shift = (uint8_t)((mapper_flags >> 31) & 0xF);
+    if (shift == 0)
+        return 0;
+    return (uint32_t)64 << shift;
+}
+
+static int nes_load(const char *path, const char *save_path) {
     FIL nes;
     FRESULT res;
     UINT br;
     ines_header_t hdr;
 
+    int ret = -1;
+    int mounted = 0;
+    int saved_ie = irq_getie();
+
+    irq_setie(0);
+
+    res = f_mount(&fs, "", 1);
+    if (res != FR_OK) {
+        printf("sdcard mount failed (err %d)\n", res);
+        goto exit;
+    }
+
+    mounted = 1;
+
     res = f_open(&nes, path, FA_READ);
     if (res != FR_OK) {
         printf("nes_load: cannot open '%s' (err %d)\n", path, res);
-        return -1;
+        goto exit;
     }
 
     res = f_read(&nes, &hdr, sizeof(hdr), &br);
     if (res != FR_OK || br != sizeof(hdr)) {
         printf("nes_load: header read failed\n");
         f_close(&nes);
-        return -1;
+        goto exit;
     }
 
     if (hdr.magic[0] != INES_MAGIC_0 || hdr.magic[1] != INES_MAGIC_1 || hdr.magic[2] != INES_MAGIC_2 ||
         hdr.magic[3] != INES_MAGIC_3) {
         printf("nes_load: not an iNES file\n");
         f_close(&nes);
-        return -1;
+        goto exit;
     }
 
     if (hdr.flags6 & 0x04) {
         printf("nes_load: trainer present, not supported\n");
         f_close(&nes);
-        return -1;
+        goto exit;
     }
+
+    nes_control_nes_reset_write(1);
+    busy_wait_us(1000);
 
     uint32_t prg_bytes;
     if (is_nes20(&hdr) && ((hdr.flags9 & 0x0F) == 0x0F)) {
@@ -183,7 +218,6 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
 
     uint8_t *dst = (uint8_t *)PRG_ROM_BASE;
     uint32_t remaining = prg_bytes;
-    uint8_t buf[512];
 
     while (remaining > 0) {
         UINT chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
@@ -191,7 +225,7 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
         if (res != FR_OK || br == 0) {
             printf("nes_load: read error after %lu bytes\n", (unsigned long)(prg_bytes - remaining));
             f_close(&nes);
-            return -1;
+            goto exit;
         }
         uintptr_t addr = (uintptr_t)dst;
         if ((addr & 0xc00) != 0) {
@@ -218,7 +252,7 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
             if (res != FR_OK || br == 0) {
                 printf("nes_load: CHR read error after %lu bytes\n", (unsigned long)(chr_bytes - remaining));
                 f_close(&nes);
-                return -1;
+                goto exit;
             }
             uintptr_t addr = (uintptr_t)dst;
             if ((addr & 0xc00) != 0x400) {
@@ -239,12 +273,11 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
 
     f_close(&nes);
 
-    uint64_t flags = compute_mapper_flags(&hdr);
-    if (mapper_flags_out)
-        *mapper_flags_out = flags;
+    const uint64_t flags = compute_mapper_flags(&hdr);
 
     uint8_t mapper = (uint8_t)(flags & 0xFF);
     uint8_t has_saves = (uint8_t)(flags >> 25) & 0x1;
+    uint32_t save_bytes = prg_nvram_size(flags);
 
     clear_ram((uint8_t *)INT_RAM_BASE, INT_RAM_SIZE);
     printf("nes_load: cleared %u bytes at 0x%08lx (internal RAM)\n", INT_RAM_SIZE, (unsigned long)INT_RAM_BASE);
@@ -252,60 +285,169 @@ static int nes_load(const char *path, const char *save_path, uint64_t *mapper_fl
     clear_ram((uint8_t *)PRG_RAM_BASE, PRG_RAM_SIZE);
     printf("nes_load: cleared %u bytes at 0x%08lx (PRG RAM)\n", PRG_RAM_SIZE, (unsigned long)PRG_RAM_BASE);
 
+    if (save_path != NULL && has_saves && save_bytes > 0) {
+        res = f_open(&nes, save_path, FA_READ);
+
+        if (res == FR_OK) {
+            printf("nes_load: loading save '%s' (%lu bytes)\n", save_path, (unsigned long)save_bytes);
+            uint8_t *sdst = (uint8_t *)PRG_RAM_BASE;
+            uint32_t srem = save_bytes;
+            while (srem > 0) {
+                UINT schunk = srem < sizeof(buf) ? srem : sizeof(buf);
+                UINT sbr;
+                res = f_read(&nes, buf, schunk, &sbr);
+                if (res != FR_OK || sbr == 0)
+                    break;
+                uintptr_t saddr = (uintptr_t)sdst;
+                if ((saddr & 0xc00) != 0) {
+                    saddr += 0x1000;
+                    saddr &= ~0xc00;
+                }
+                sdst = (uint8_t *)saddr;
+                memcpy(sdst, buf, sbr);
+                sdst += sbr;
+                srem -= sbr;
+            }
+            f_close(&nes);
+        } else {
+            printf("nes_load: unable to open save file %s, ignoring\n", save_path);
+        }
+    }
+
+    nes_control_mapper_flags_write(flags);
+
     flush_cpu_dcache();
     flush_l2_cache();
 
     printf("nes_load: done, mapper_flags=0x%016llx\n", (unsigned long long)flags);
-    printf("  mapper=%u has_saves=%u prg_pages=%u chr_pages=%u\n", mapper, has_saves, hdr.prg_pages, hdr.chr_pages);
+    printf("  mapper=%u has_saves=%u save_bytes=%lu prg_pages=%u chr_pages=%u\n", mapper, has_saves, save_bytes,
+           hdr.prg_pages, hdr.chr_pages);
+    ret = 0;
 
-    return 0;
+exit:
+    if (mounted) {
+        f_unmount("");
+    }
+
+    busy_wait_us(10000);
+
+    if (ret == 0) {
+    nes_control_nes_reset_write(0);
+    }
+
+    irq_setie(saved_ie);
+
+    return ret;
 }
 
-void nes_loader_cmd(const char *path) {
-    FRESULT res;
-    uint64_t mapper_flags = 0;
+int nes_load_without_save(const char *path) { return nes_load(path, NULL); }
 
-    nes_control_nes_reset_write(1);
+int nes_load_with_save(const char *path, const char *save_path) { return nes_load(path, save_path); }
+
+int nes_save(const char *save_path) {
+    FRESULT res;
+    FIL sav;
+
+    int mounted = 0;
+    int ret = -1;
+    int saved_ie = irq_getie();
+
+    irq_setie(0);
 
     res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
         printf("sdcard mount failed (err %d)\n", res);
-        nes_control_nes_reset_write(0);
-        return;
+        goto exit;
     }
 
-    if (nes_load(path, NULL, &mapper_flags) == 0) {
-        nes_control_mapper_flags_write(mapper_flags);
-        printf("mapper_flags written: 0x%016llx\n", (unsigned long long)mapper_flags);
-        uint64_t rb = nes_control_mapper_flags_read();
-        printf("mapper_flags readback: 0x%016llx\n", (unsigned long long)rb);
-        printf("  prg_size=[10:8]=0x%lx chr_size=[13:11]=0x%lx\n", (unsigned long)((mapper_flags >> 8) & 0x7),
-               (unsigned long)((mapper_flags >> 11) & 0x7));
+    mounted = 1;
+
+    uint64_t mapper_flags = nes_control_mapper_flags_read();
+
+    uint8_t has_saves = (uint8_t)((mapper_flags >> 25) & 0x1);
+    if (!has_saves) {
+        printf("nes_save: current ROM does not have save flags enabled\n");
+        goto exit;
     }
 
-    f_unmount("");
+    uint32_t save_bytes = prg_nvram_size(mapper_flags);
+    if (save_bytes == 0) {
+        printf("nes_save: current ROM has NVRAM size set to 0\n");
+        goto exit;
+    }
 
-    busy_wait_us(10000);
-    nes_control_nes_reset_write(0);
+    printf("nes_save: about to save %lu bytes to '%s'\n", (unsigned long)save_bytes, save_path);
+
+    res = f_open(&sav, save_path, FA_WRITE | FA_CREATE_ALWAYS);
+    if (res != FR_OK) {
+        printf("nes_save: cannot open '%s' (err %d)\n", save_path, res);
+        goto exit;
+    }
+
+    nes_control_nes_pause_write(1);
+    busy_wait_us(1000);
+
+    printf("nes_save: saving %lu bytes to '%s'\n", (unsigned long)save_bytes, save_path);
+
+    const uint8_t *src = (const uint8_t *)PRG_RAM_BASE;
+    uint32_t remaining = save_bytes;
+
+    while (remaining > 0) {
+        uintptr_t saddr = (uintptr_t)src;
+        if ((saddr & 0xc00) != 0) {
+            saddr += 0x1000;
+            saddr &= ~0xc00;
+        }
+        src = (const uint8_t *)saddr;
+        UINT chunk = remaining < sizeof(buf) ? remaining : sizeof(buf);
+        memcpy(buf, src, chunk);
+        UINT bw;
+        res = f_write(&sav, buf, chunk, &bw);
+        if (res != FR_OK || bw != chunk) {
+            printf("nes_save: write error\n");
+            f_close(&sav);
+            goto exit;
+        }
+        src += chunk;
+        remaining -= chunk;
+    }
+
+    f_close(&sav);
+    printf("nes_save: done\n");
+    ret = 0;
+
+exit:
+    if (mounted) {
+        f_unmount("");
+    }
+
+    nes_control_nes_pause_write(0);
+    irq_setie(saved_ie);
+
+    return ret;
 }
 
-void sdcard_ls_cmd(const char *path) {
+int sdcard_ls(const char *path) {
     FRESULT res;
     DIR dir;
     FILINFO fno;
 
+    int mounted = 0;
+    int ret = -1;
+
     res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
         printf("sdcard mount failed (err %d)\n", res);
-        return;
+        goto exit;
     }
+
+    mounted = 1;
 
     const char *dirpath = (*path == '\0') ? "/" : path;
     res = f_opendir(&dir, dirpath);
     if (res != FR_OK) {
         printf("ls: cannot open '%s' (err %d)\n", dirpath, res);
-        f_unmount("");
-        return;
+        goto exit;
     }
 
     printf("Contents of %s:\n", dirpath);
@@ -320,5 +462,12 @@ void sdcard_ls_cmd(const char *path) {
     }
 
     f_closedir(&dir);
-    f_unmount("");
+    ret = 0;
+
+exit:
+    if (mounted) {
+        f_unmount("");
+    }
+
+    return ret;
 }

@@ -20,7 +20,14 @@
 #ifndef NES_LOADER_H
 #define NES_LOADER_H
 
-void nes_loader_cmd(const char *path);
-void sdcard_ls_cmd(const char *path);
+#include <stdint.h>
+
+int nes_load_without_save(const char *path);
+int nes_load_with_save(const char *path, const char *save_path);
+int nes_save(const char *save_path);
+
+int sdcard_ls(const char *path);
+
+uint32_t prg_nvram_size(uint64_t mapper_flags);
 
 #endif

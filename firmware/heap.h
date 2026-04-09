@@ -22,9 +22,11 @@
 
 #include <stddef.h>
 
-void  heap_init(void);
+void heap_init(void);
 void *malloc(size_t size);
 void *realloc(void *ptr, size_t size);
-void  free(void *ptr);
+void free(void *ptr);
+
+int memcmp(const void *s1, const void *s2, size_t n);
 
 #endif

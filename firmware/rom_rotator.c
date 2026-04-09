@@ -24,6 +24,26 @@
 
 #include <system.h>
 
+#include <generated/csr.h>
+#include <irq.h>
+
+#include "ff.h"
+#include "spisdcard.h"
+
+#include "nes_loader.h"
+#include "rom_rotator.h"
+
+#define ROM_NAME_MAX 64
+#define ROM_DIR "/roms"
+#define ROM_EXT ".nes"
+#define SAVE_DIR "/saves"
+#define SAVE_EXT ".srm"
+
+static char **rom_list = NULL;
+static int rom_count = 0;
+static int rom_current = -1;
+static FATFS fs;
+
 static int str_icmp(const char *a, const char *b) {
     while (*a && *b) {
         int d = tolower((unsigned char)*a) - tolower((unsigned char)*b);
@@ -35,42 +55,35 @@ static int str_icmp(const char *a, const char *b) {
     return tolower((unsigned char)*a) - tolower((unsigned char)*b);
 }
 
-#include <generated/csr.h>
-#include <irq.h>
-#include <libfatfs/ff.h>
-#include <liblitesdcard/spisdcard.h>
-
-#include "nes_loader.h"
-#include "rom_rotator.h"
-
-#define ROM_NAME_MAX 64
-#define ROM_DIR "/roms"
-#define ROM_EXT ".nes"
-
-static char **rom_list = NULL;
-static int rom_count = 0;
-static int rom_current = -1;
-static FATFS rot_fs;
-static int fs_mounted = 0;
-
 static int scan_roms(void) {
     DIR dir;
     FILINFO fno;
     FRESULT res;
 
-    res = f_mount(&rot_fs, "", 1);
+    rom_count = -1;
+
+    int mounted = 0;
+
+    res = f_mount(&fs, "", 1);
     if (res != FR_OK) {
         printf("rom_rotator: mount failed (%d)\n", res);
-        return -1;
+        goto exit;
     }
-    fs_mounted = 1;
+
+    mounted = 1;
+
+    if (f_stat(SAVE_DIR, &fno) != FR_OK) {
+        res = f_mkdir(SAVE_DIR);
+        if (res != FR_OK) {
+            printf("rom_rotator: mkdir failed (%d)\n", res);
+            goto exit;
+        }
+    }
 
     res = f_opendir(&dir, ROM_DIR);
     if (res != FR_OK) {
         printf("rom_rotator: opendir failed (%d)\n", res);
-        f_unmount("");
-        fs_mounted = 0;
-        return -1;
+        goto exit;
     }
 
     rom_count = 0;
@@ -80,9 +93,7 @@ static int scan_roms(void) {
     if (!rom_list) {
         printf("rom_rotator: alloc failed\n");
         f_closedir(&dir);
-        f_unmount("");
-        fs_mounted = 0;
-        return -1;
+        goto exit;
     }
 
     for (;;) {
@@ -116,11 +127,6 @@ static int scan_roms(void) {
     }
     f_closedir(&dir);
 
-    if (!fs_mounted) {
-        f_unmount("");
-        fs_mounted = 0;
-    }
-
     /* insertion sort — alphabetical order */
     for (int i = 1; i < rom_count; i++) {
         char *tmp = rom_list[i];
@@ -133,82 +139,119 @@ static int scan_roms(void) {
     }
 
     printf("rom_rotator: found %d ROM(s)\n", rom_count);
+
+exit:
+    if (mounted) {
+        f_unmount("");
+    }
+
     return rom_count;
 }
 
+static void save_current(void) {
+    if (rom_current < 0 || rom_count <= 0)
+        return;
+
+    uint64_t mapper_flags = nes_control_mapper_flags_read();
+
+    uint8_t has_saves = (uint8_t)((mapper_flags >> 25) & 0x1);
+
+    if (!has_saves)
+        return;
+
+    if (prg_nvram_size(mapper_flags) == 0)
+        return;
+
+    const char *name = rom_list[rom_current];
+    size_t nlen = strlen(name);
+    size_t stem_len = (nlen >= 4) ? nlen - 4 : nlen;
+
+    char spath[ROM_NAME_MAX];
+    size_t save_dir_len = strlen(SAVE_DIR);
+    memset(spath, 0, ROM_NAME_MAX);
+    memcpy(spath, SAVE_DIR, save_dir_len);
+    spath[save_dir_len] = '/';
+    memcpy(spath + save_dir_len + 1, name, stem_len);
+    memcpy(spath + save_dir_len + 1 + stem_len, SAVE_EXT, strlen(SAVE_EXT));
+
+    printf("rom_rotator: saving save [%d/%d] as %s\n", rom_current + 1, rom_count, spath);
+
+    nes_save(spath);
+}
+
 static void load_current(void) {
-    if (rom_count == 0) {
+    FRESULT res;
+
+    if (rom_count <= 0) {
         printf("rom_rotator: no ROMs found\n");
         return;
     }
 
-    size_t plen = strlen(ROM_DIR) + 1 + strlen(rom_list[rom_current]) + 1;
-    char *path = malloc(plen);
-    if (!path) {
-        printf("rom_rotator: alloc failed\n");
-        return;
-    }
+    const char *name = rom_list[rom_current];
+    size_t nlen = strlen(name);
+    size_t stem_len = (nlen >= 4) ? nlen - 4 : nlen;
+
+    char path[ROM_NAME_MAX];
     size_t rom_dir_len = strlen(ROM_DIR);
-    memset(path, 0, plen);
+    memset(path, 0, ROM_NAME_MAX);
     memcpy(path, ROM_DIR, rom_dir_len);
     path[rom_dir_len] = '/';
-    memcpy(path + rom_dir_len + 1, rom_list[rom_current], strlen(rom_list[rom_current]));
-    printf("rom_rotator: loading [%d/%d] %s\n", rom_current + 1, rom_count, path);
-    nes_loader_cmd(path);
-    free(path);
+    memcpy(path + rom_dir_len + 1, name, nlen);
+
+    char spath[ROM_NAME_MAX];
+    size_t save_dir_len = strlen(SAVE_DIR);
+    memset(spath, 0, ROM_NAME_MAX);
+    memcpy(spath, SAVE_DIR, save_dir_len);
+    spath[save_dir_len] = '/';
+    memcpy(spath + save_dir_len + 1, name, stem_len);
+    memcpy(spath + save_dir_len + 1 + stem_len, SAVE_EXT, strlen(SAVE_EXT));
+
+    res = f_mount(&fs, "", 1);
+    if (res != FR_OK) {
+        printf("rom_rotator: mount failed (%d)\n", res);
+        return;
+    }
+
+    res = f_stat(spath, NULL);
+
+    f_unmount("");
+
+    if (res == FR_OK) {
+        printf("rom_rotator: loading [%d/%d] %s and save %s\n", rom_current + 1, rom_count, path, spath);
+        nes_load_with_save(path, spath);
+    } else {
+        printf("rom_rotator: loading [%d/%d] %s\n", rom_current + 1, rom_count, path);
+        nes_load_without_save(path);
+    }
 }
 
 #define EV_NEXT_ROM (1 << 0)
 #define EV_PREVIOUS_ROM (1 << 1)
 #define EV_RESET_ROM (1 << 2)
 
-void rom_rotator_next_rom_isr(void) {
-    nes_control_ev_pending_write(EV_NEXT_ROM);
-
-    if (rom_count == 0)
-        return;
-
-    rom_current = (rom_current + 1) % rom_count;
-    load_current();
-}
-
-void rom_rotator_previous_rom_isr(void) {
-    nes_control_ev_pending_write(EV_PREVIOUS_ROM);
-
-    if (rom_count == 0)
-        return;
-
-    rom_current = (rom_current - 1 + rom_count) % rom_count;
-    load_current();
-}
-
-void rom_rotator_reset_rom_isr(void) {
-    nes_control_ev_pending_write(EV_RESET_ROM);
-
-    nes_control_nes_reset_write(1);
-    busy_wait_us(100);
-    load_current();
-}
-
 void rom_rotator_isr(void) {
     uint32_t pending = nes_control_ev_pending_read();
     nes_control_ev_pending_write(pending);
 
-    if (rom_count == 0)
+    if (rom_count <= 0) {
         return;
+    }
 
     if (pending & EV_NEXT_ROM) {
+        save_current();
         rom_current = (rom_current + 1) % rom_count;
         load_current();
     } else if (pending & EV_PREVIOUS_ROM) {
+        save_current();
         rom_current = (rom_current - 1 + rom_count) % rom_count;
         load_current();
     } else if (pending & EV_RESET_ROM) {
-        nes_control_nes_reset_write(1);
-        busy_wait_us(100);
+        save_current();
         load_current();
     }
 }
+
+void rom_rotator_discard(void) { rom_current = -1; }
 
 void rom_rotator_init(void) {
     if (scan_roms() <= 0)

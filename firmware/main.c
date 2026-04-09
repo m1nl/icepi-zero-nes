@@ -6,15 +6,17 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "heap.h"
-#include "nes_loader.h"
-#include "rom_rotator.h"
 #include <generated/csr.h>
 #include <generated/mem.h>
 #include <irq.h>
 #include <libbase/console.h>
 #include <libbase/uart.h>
-#include <liblitesdcard/spisdcard.h>
+
+#include "heap.h"
+#include "spisdcard.h"
+
+#include "nes_loader.h"
+#include "rom_rotator.h"
 
 /*-----------------------------------------------------------------------*/
 /* Uart                                                                  */
@@ -83,12 +85,15 @@ static void help(void) {
          " "__TIME__
          "\n");
     puts("Available commands:");
-    puts("help               - Show this command");
-    puts("reboot             - Reboot CPU");
-    puts("load_nes <path>    - Load NES ROM from SD card");
-    puts("ls [path]          - List SD card directory");
-    puts("debug_mem          - Show last CPU/PPU SDRAM addresses");
-    puts("hexdump <addr> [len] - Hex dump memory (len default 256)");
+    puts("help                   - Show this command");
+    puts("reboot                 - Reboot CPU");
+    puts("ls [path]              - List SD card directory");
+    puts("nes_load <path> [save] - Load NES ROM from SD card, optionally load save");
+    puts("nes_save <path>        - Save NES battery-backed PRG RAM to SD card");
+    puts("nes_pause              - Pause NES");
+    puts("nes_resume             - Resume NES");
+    puts("debug_mem              - Show last CPU/PPU SDRAM addresses");
+    puts("hexdump <addr> [len]   - Hex dump memory (len default 256)");
 }
 
 /*-----------------------------------------------------------------------*/
@@ -97,15 +102,34 @@ static void help(void) {
 
 static void reboot_cmd(void) { ctrl_reset_write(1); }
 
-static void load_nes_cmd(char *path) {
-    if (*path == '\0') {
-        printf("usage: load_nes <path>\n");
+static void nes_load_cmd(char *str) {
+    if (*str == '\0') {
+        printf("usage: nes_load <path> [save_path]\n");
         return;
     }
-    nes_loader_cmd(path);
+
+    rom_rotator_discard();
+
+    char *path = get_token(&str);
+    if (*str != '\0')
+        nes_load_with_save(path, str);
+    else
+        nes_load_without_save(path);
 }
 
-static void ls_cmd(char *path) { sdcard_ls_cmd(path); }
+static void nes_save_cmd(char *path) {
+    if (*path == '\0') {
+        printf("usage: nes_save <path>\n");
+        return;
+    }
+    nes_save(path);
+}
+
+static void nes_pause_cmd(void) { nes_control_nes_pause_write(1); }
+
+static void nes_resume_cmd(void) { nes_control_nes_pause_write(0); }
+
+static void sdcard_ls_cmd(char *path) { sdcard_ls(path); }
 
 static void hexdump_cmd(char *str) {
     if (*str == '\0') {
@@ -141,8 +165,10 @@ static void hexdump_cmd(char *str) {
 static void debug_mem_cmd(void) {
     uint32_t cpu_addr = nes_control_cpu_last_addr_read();
     uint32_t ppu_addr = nes_control_ppu_last_addr_read();
+
     uint8_t cpu_data = (uint8_t)nes_control_cpu_last_data_read();
     uint8_t ppu_data = (uint8_t)nes_control_ppu_last_data_read();
+
     printf("CPU last SDRAM addr: 0x%08lx (MAIN_RAM+0x%07lx) data: 0x%02x\n", (unsigned long)(MAIN_RAM_BASE + cpu_addr),
            (unsigned long)cpu_addr, cpu_data);
     printf("PPU last SDRAM addr: 0x%08lx (MAIN_RAM+0x%07lx) data: 0x%02x\n", (unsigned long)(MAIN_RAM_BASE + ppu_addr),
@@ -165,35 +191,38 @@ static void console_service(void) {
         help();
     else if (strcmp(token, "reboot") == 0)
         reboot_cmd();
-    else if (strcmp(token, "load_nes") == 0)
-        load_nes_cmd(str);
     else if (strcmp(token, "ls") == 0)
-        ls_cmd(str);
+        sdcard_ls_cmd(str);
+    else if (strcmp(token, "nes_load") == 0)
+        nes_load_cmd(str);
+    else if (strcmp(token, "nes_save") == 0)
+        nes_save_cmd(str);
+    else if (strcmp(token, "nes_pause") == 0)
+        nes_pause_cmd();
+    else if (strcmp(token, "nes_resume") == 0)
+        nes_resume_cmd();
     else if (strcmp(token, "debug_mem") == 0)
         debug_mem_cmd();
     else if (strcmp(token, "hexdump") == 0)
         hexdump_cmd(str);
+    else
+        printf("unknown command\n");
     prompt();
 }
-
-void nes_control_isr(void);
-void nes_control_isr(void) { rom_rotator_isr(); }
 
 int main(void) {
     irq_setmask(0);
     irq_setie(1);
 
     uart_init();
-
     heap_init();
-    fatfs_set_ops_spisdcard();
-
-    rom_rotator_init();
-
-    irq_attach(NES_CONTROL_INTERRUPT, nes_control_isr);
-    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
 
     help();
+    rom_rotator_init();
+
+    irq_attach(NES_CONTROL_INTERRUPT, rom_rotator_isr);
+    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
+
     prompt();
 
     while (1) {
