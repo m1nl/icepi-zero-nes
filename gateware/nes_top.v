@@ -61,6 +61,7 @@ module nes_top #(
   // NES control
   input wire [63:0] mapper_flags,
   input wire        nes_reset,
+  input wire        nes_pause,
 
   // Debug: last SDRAM addresses
   output reg  [CPU_ADDR_WIDTH-1:0] cpu_last_addr,
@@ -204,6 +205,8 @@ wire [15:0] audio_sample;
 wire int_audio;
 wire ext_audio;
 
+wire nes_paused;
+
 reg [7:0] cpumem_din;
 reg [7:0] cpumem_din_r;
 
@@ -217,6 +220,8 @@ NES nes_0 (
   .clk(clk),
   .enable(nes_en),
   .reset(nes_reset),
+  .pause(nes_pause),
+  .paused(nes_paused),
   .cpumem_addr(cpumem_addr),
   .cpumem_read(cpumem_read),
   .cpumem_write(cpumem_write),
@@ -720,7 +725,7 @@ always @(posedge clk) begin
   end
 end
 
-assign leds = {usb_oe[1], usb_oe[0], &(nes_lost_ticks), video_sync_state != VIDEO_SYNC_DONE, nes_reset};
+assign leds = {usb_oe[0], usb_oe[1], &(nes_lost_ticks), video_sync_state != VIDEO_SYNC_DONE, nes_reset || nes_paused};
 
 endmodule
 `default_nettype wire

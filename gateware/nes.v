@@ -78,10 +78,15 @@ assign aout = dmc_ack ? dmc_dma_addr : !odd_cycle ? sprite_dma_addr : 16'h2004;
 
 endmodule
 
-module NES(
+module NES #(
+  parameter CPU_MODEL = 0
+) (
   input         clk,
   input         reset,
   input         enable,
+  input         pause,
+  output reg    paused,
+
   input  [63:0] mapper_flags,
   output  [5:0] color,         // pixel generated from PPU
   output  [2:0] joypad_out,    // Set to 1 to strobe joypads. Then set to zero to keep the value (bit0)
@@ -121,15 +126,14 @@ module NES(
 /*************            Clocks            ***************/
 /**********************************************************/
 
-wire [7:0] from_data_bus;
-wire [7:0] cpu_dout;
-
 // odd or even apu cycle, AKA div_apu or apu_/clk2. This is actually not 50% duty cycle. It is high for 18
 // master cycles and low for 6 master cycles. It is considered active when low or "even".
 reg odd_or_even = 0; // 1 == odd, 0 == even
 
 // Main counter
-reg [11:0] div_cpu = 12'b000000000010;
+wire [11:0] clock_start = 12'b000000000010;
+
+reg [11:0] div_cpu = clock_start;
 
 // CE's
 assign cpu_ce  = div_cpu[0];
@@ -148,14 +152,22 @@ wire phi2 = |(div_cpu[11:5]);
 
 always @(posedge clk) begin
   if (reset) begin
-    div_cpu     <= 12'b000000000010;
+    div_cpu     <= clock_start;
     odd_or_even <= 1'b0;
+    paused      <= pause;
 
   end else if (enable) begin
-    div_cpu <= {div_cpu[10:0], div_cpu[11]};
+    if (div_cpu != clock_start || !paused) begin
+      div_cpu <= {div_cpu[10:0], div_cpu[11]};
 
-    if (apu_ce)
-       odd_or_even <= ~odd_or_even;
+      if (apu_ce)
+         odd_or_even <= ~odd_or_even;
+
+      if (cpu_ce && cpu_rnw)
+        paused <= pause;
+
+    end else
+      paused <= pause;
   end
 end
 
@@ -163,33 +175,61 @@ end
 /*************              CPU             ***************/
 /**********************************************************/
 
+wire  [7:0] from_data_bus;
+
+wire  [7:0] cpu_dout;
+wire  [7:0] cpu_din;
 wire [15:0] cpu_addr;
 wire        cpu_rnw;
-wire        pause_cpu;
+wire        dma_pause_cpu;
 wire        nmi;
 wire        mapper_irq;
 wire        apu_irq;
 
+assign cpu_din = cpu_rnw ? from_data_bus : cpu_dout;
+
 // IRQ only changes once per CPU ce and with our current
 // limited CPU model, NMI is only latched on the falling edge
 // of M2, which corresponds with CPU ce, so no latches needed.
+generate
+  if (CPU_MODEL) begin : CPU_6502N
+    proc_core cpu (
+      .clock        (clk),
+      .clock_en     (cpu_ce && enable),
+      .reset        (reset),
+      .ready        (~(dma_pause_cpu || pause || paused)),
+      .irq_n        (~(apu_irq || mapper_irq)),
+      .nmi_n        (~nmi),
+      .so_n         (1'b1),
+      .addr_out     (cpu_addr),
+      .data_in      (cpu_din),
+      .data_out     (cpu_dout),
+      .read_write_n (cpu_rnw),
+      .interrupt_ack(),
+      .pc_out       ()
+    );
+  end else begin : CPU_T65
+    T65 cpu (
+      .Mode   (2'b00),
+      .BCD_en (1'b0),
+      .Res_n  (~reset),
+      .Enable (cpu_ce && enable),
+      .Clk    (clk),
+      .Rdy    (~(dma_pause_cpu || pause || paused)),
+      .Abort_n(1'b1),
+      .IRQ_n  (~(apu_irq || mapper_irq)),
+      .NMI_n  (~nmi),
+      .SO_n   (1'b1),
+      .R_W_n  (cpu_rnw),
+      .A      (cpu_addr),
+      .DI     (cpu_din),
+      .DO     (cpu_dout),
+      .NMI_ack()
+    );
+  end
+endgenerate
 
-proc_core cpu (
-  .clock        (clk),
-  .clock_en     (cpu_ce && enable),
-  .reset        (reset),
-  .ready        (~pause_cpu),
-  .irq_n        (~(apu_irq || mapper_irq)),
-  .nmi_n        (~nmi),
-  .so_n         (1'b1),
-  .addr_out     (cpu_addr),
-  .data_in      (cpu_rnw ? from_data_bus : cpu_dout),
-  .data_out     (cpu_dout),
-  .read_write_n (cpu_rnw),
-  .interrupt_ack(),
-  .pc_out       ()
-);
-
+wire dma_cs;
 wire [15:0] dma_aout;
 wire dma_aout_enable;
 wire dma_read;
@@ -198,17 +238,19 @@ wire apu_dma_request, apu_dma_ack;
 wire [15:0] apu_dma_addr;
 
 // Determine the values on the bus outgoing from the CPU chip (after DMA / APU)
-wire [15:0] addr = dma_aout_enable ? dma_aout        : cpu_addr;
-wire [7:0]  dbus = dma_aout_enable ? dma_data_to_ram : cpu_dout;
-wire mr_int      = dma_aout_enable ? dma_read        : cpu_rnw;
-wire mw_int      = dma_aout_enable ? !dma_read       : !cpu_rnw;
+wire [15:0] addr   = dma_aout_enable ? dma_aout        : cpu_addr;
+wire  [7:0] dbus   = dma_aout_enable ? dma_data_to_ram : cpu_dout;
+wire        mr_int = dma_aout_enable ? dma_read        : cpu_rnw;
+wire        mw_int = dma_aout_enable ? !dma_read       : !cpu_rnw;
+
+assign dma_cs  = addr == 'h4014;
 
 DmaController dma (
   .clk           (clk),
   .ce            (cpu_ce && enable),
   .reset         (reset),
   .odd_cycle     (odd_or_even),                 // Even or odd cycle
-  .sprite_trigger((addr == 'h4014 && mw_int)),  // Sprite trigger
+  .sprite_trigger(dma_cs && mw_int),            // Sprite trigger
   .dmc_trigger   (apu_dma_request),             // DMC Trigger
   .cpu_read      (cpu_rnw),                     // CPU in a read cycle?
   .data_from_cpu (cpu_dout),                    // Data from cpu
@@ -219,7 +261,7 @@ DmaController dma (
   .read          (dma_read),
   .data_to_ram   (dma_data_to_ram),
   .dmc_ack       (apu_dma_ack),
-  .pause_cpu     (pause_cpu)
+  .pause_cpu     (dma_pause_cpu)
 );
 
 /**********************************************************/
@@ -227,7 +269,8 @@ DmaController dma (
 /**********************************************************/
 
 wire apu_cs = addr >= 'h4000 && addr < 'h4018;
-wire [7:0] apu_dout;
+
+wire  [7:0] apu_dout;
 wire [15:0] sample_apu;
 
 APU apu (
@@ -346,8 +389,8 @@ wire [15:0] sample_ext;
 wire [15:0] prg_addr = addr;
 wire  [7:0] prg_din = (dbus & (prg_conflict ? cpumem_din : 8'hFF)) | (prg_conflict_d0 ? cpumem_din & 8'h01 : 8'h00);
 
-wire prg_read  = mr_int && cart_pre && !apu_cs && !ppu_cs;
-wire prg_write = mw_int && cart_pre && !apu_cs && !ppu_cs;
+wire prg_read  = mr_int && cart_pre && !apu_cs && !ppu_cs && !dma_cs;
+wire prg_write = mw_int && cart_pre && !apu_cs && !ppu_cs && !dma_cs;
 
 cart_top multi_mapper (
   // FPGA specific
@@ -422,6 +465,8 @@ assign from_data_bus = raw_data_bus;
 reg [7:0] raw_data_bus;
 
 always @(*) begin
+  raw_data_bus = open_bus_data;
+
   if (apu_cs) begin
     if (joypad1_cs)
       raw_data_bus = {open_bus_data[7:5], joypad1_data};
@@ -431,12 +476,12 @@ always @(*) begin
       raw_data_bus = (addr == 16'h4015) ? apu_dout : open_bus_data;
   end else if (ppu_cs) begin
     raw_data_bus = ppu_dout;
+  end else if (dma_cs) begin
+    raw_data_bus = open_bus_data;
   end else if (prg_allow) begin
     raw_data_bus = cpumem_din;
   end else if (prg_bus_write) begin
     raw_data_bus = prg_dout_mapper;
-  end else begin
-    raw_data_bus = open_bus_data;
   end
 end
 

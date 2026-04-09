@@ -33,6 +33,7 @@ class NESControl(LiteXModule):
     def __init__(self):
         self.mapper_flags = CSRStorage(64, reset=0, description="NES mapper_flags register")
         self.nes_reset = CSRStorage(1, reset=1, description="NES reset (1=hold in reset, 0=run)")
+        self.nes_pause = CSRStorage(1, reset=0, description="NES pause (1=hold in pause, 0=run)")
         self.cpu_last_addr = CSRStatus(25, reset=0, description="Last SDRAM address issued by NES CPU")
         self.ppu_last_addr = CSRStatus(25, reset=0, description="Last SDRAM address issued by NES PPU")
         self.cpu_last_data = CSRStatus(8, reset=0, description="Last byte read from SDRAM by NES CPU")
@@ -109,6 +110,7 @@ class NESTop(Module):
             # NES control
             i_mapper_flags=self.control.mapper_flags.storage,
             i_nes_reset=self.control.nes_reset.storage,
+            i_nes_pause=self.control.nes_pause.storage,
             o_cpu_last_addr=self.control.cpu_last_addr.status,
             o_ppu_last_addr=self.control.ppu_last_addr.status,
             o_cpu_last_data=self.control.cpu_last_data.status,
@@ -172,3 +174,17 @@ class NESTop(Module):
         )
         cpu6502._ghdl_opts.append("-fsynopsys")
         self.submodules.cpu6502 = cpu6502
+
+        t65_dir = os.path.join(gateware_dir, "T65")
+        t65 = VHD2VConverter(
+            platform,
+            name="T65",
+            sources=[
+                os.path.join(t65_dir, "T65_ALU.vhd"),
+                os.path.join(t65_dir, "T65_MCode.vhd"),
+                os.path.join(t65_dir, "T65_Pack.vhd"),
+                os.path.join(t65_dir, "T65.vhd"),
+            ],
+        )
+        t65._ghdl_opts.append("-fsynopsys")
+        self.submodules.t65 = t65
