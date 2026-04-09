@@ -28,7 +28,7 @@ USB_CLK_FREQ = 60e6
 
 class _CRG(LiteXModule):
     def __init__(
-        self, platform, sys_clk_freq, sdram_rate="1:2", tmds_clk_freq=TMDS_CLK_FREQUENCY, usb_clk_freq=USB_CLK_FREQ
+        self, platform, sys_clk_freq, sdram_rate="1:1", tmds_clk_freq=TMDS_CLK_FREQUENCY, usb_clk_freq=USB_CLK_FREQ
     ):
         self.rst = Signal()
         self.cd_sys = ClockDomain()
@@ -88,7 +88,7 @@ class BaseSoC(SoCCore):
         device="LFE5U-25F",
         toolchain="trellis",
         sys_clk_freq=SYS_CLK_FREQUENCY,
-        sdram_rate="1:2",
+        sdram_rate="1:1",
         l2_size=0,
         with_spi_flash=True,
         **kwargs,
@@ -108,7 +108,7 @@ class BaseSoC(SoCCore):
             from litedram.modules import W9825G6KH6
             from litedram.phy import GENSDRPHY, HalfRateGENSDRPHY
 
-            controller_settings = ControllerSettings(address_mapping="ROW_BANK_COL")
+            controller_settings = ControllerSettings(address_mapping="ROW_BANK_COL", cmd_buffer_depth=1)
             sdrphy_cls = HalfRateGENSDRPHY if sdram_rate == "1:2" else GENSDRPHY
             self.sdrphy = sdrphy_cls(platform.request("sdram"), sys_clk_freq)
             self.add_sdram(
@@ -215,7 +215,7 @@ def main():
 
     parser = LiteXArgumentParser(platform=icepi_zero.Platform, description="LiteX SoC on Icepi Zero.")
     parser.add_target_argument("--device", default="LFE5U-25F", help="FPGA device (LFE5U-25F).")
-    parser.add_target_argument("--sdram-rate", default="1:2", help="SDRAM Rate (1:1 Full Rate or 1:2 Half Rate).")
+    parser.add_target_argument("--sdram-rate", default="1:1", help="SDRAM Rate (1:1 Full Rate or 1:2 Half Rate).")
     parser.add_target_argument("--with-spi-flash", action="store_true", help="Enable memory-mapped SPI flash.")
     parser.add_target_argument("--sys-clk-freq", default=SYS_CLK_FREQUENCY, type=float, help="System clock frequency.")
 
