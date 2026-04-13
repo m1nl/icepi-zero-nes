@@ -224,7 +224,9 @@ int main(void) {
 
     while (1) {
         console_service();
-        rom_rotator_service();
+
+        if (rom_rotator_service())
+            prompt();
     }
 
     return 0;

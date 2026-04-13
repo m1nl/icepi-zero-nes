@@ -22,6 +22,6 @@
 
 void rom_rotator_init(void);
 void rom_rotator_discard(void);
-void rom_rotator_service(void);
+int rom_rotator_service(void);
 
 #endif

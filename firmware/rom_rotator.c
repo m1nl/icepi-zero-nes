@@ -270,9 +270,9 @@ void rom_rotator_init(void) {
     nes_control_ev_enable_write(EV_NEXT_ROM | EV_PREVIOUS_ROM | EV_RESET_ROM);
 }
 
-void rom_rotator_service(void) {
+int rom_rotator_service(void) {
     if (rom_count <= 0)
-        return;
+        return 0;
 
     if (rom_next != rom_current) {
         fputc('\n', stdout);
@@ -285,5 +285,9 @@ void rom_rotator_service(void) {
 
         rom_current = rom_next;
         load_current();
+
+        return 1;
     }
+
+    return 0;
 }
