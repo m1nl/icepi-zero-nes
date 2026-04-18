@@ -7,7 +7,7 @@ INCLUDE generated/regions.ld
 
 _app_base  = 0x41000000;
 _heap_base = _app_base + 100K;
-_heap_end  = ORIGIN(main_ram) + LENGTH(main_ram);
+_heap_end  = _heap_base + 8M;
 
 SECTIONS
 {

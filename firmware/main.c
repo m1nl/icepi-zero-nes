@@ -90,8 +90,8 @@ static void help(void) {
     puts("ls [path]              - List SD card directory");
     puts("nes_load <path> [save] - Load NES ROM from SD card, optionally load save");
     puts("nes_save <path>        - Save NES battery-backed PRG RAM to SD card");
-    puts("nes_pause              - Pause NES");
-    puts("nes_resume             - Resume NES");
+    puts("nes_pause              - Pause NES core");
+    puts("nes_resume             - Resume NES core");
     puts("debug_mem              - Show last CPU/PPU SDRAM addresses");
     puts("hexdump <addr> [len]   - Hex dump memory (len default 256)");
 }
