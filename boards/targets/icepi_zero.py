@@ -8,6 +8,7 @@
 
 from litex.build.io import DDROutput
 from litex.gen import *
+from litex.soc.cores.bitbang import I2CMaster
 from litex.soc.cores.clock import *
 from litex.soc.cores.video import VideoHDMI10to1Serializer
 from litex.soc.integration.builder import *
@@ -146,6 +147,10 @@ class BaseSoC(SoCCore):
                 ),
             )
             self.cpu.set_reset_address(self.bus.regions["rom"].origin)
+
+        # System I2C (behing multiplexer) ----------------------------------------------------------
+        i2c_pads = platform.request("i2c")
+        self.i2c = I2CMaster(i2c_pads)
 
         # TMDS -------------------------------------------------------------------------------------
         tmds = platform.request("gpdi")
