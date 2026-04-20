@@ -4,7 +4,7 @@ include $(SOC_DIRECTORY)/software/common.mak
 LIBS := $(filter-out liblitesdcard libfatfs,$(LIBS))
 PACKAGES := $(filter-out liblitesdcard libfatfs,$(PACKAGES))
 
-OBJECTS = crt0.o main.o nes_loader.o rom_rotator.o heap.o tlsf.o spisdcard.o ff.o ffunicode.o ffsystem.o
+OBJECTS = crt0.o main.o nes_loader.o rom_rotator.o power.o heap.o tlsf.o spisdcard.o ff.o ffunicode.o ffsystem.o
 CFLAGS += -Os -flto
 
 all: icepi-zero-nes.bin

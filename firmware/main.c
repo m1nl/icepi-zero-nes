@@ -17,6 +17,7 @@
 
 #include "nes_loader.h"
 #include "rom_rotator.h"
+#include "power.h"
 
 /*-----------------------------------------------------------------------*/
 /* Uart                                                                  */
@@ -87,6 +88,7 @@ static void help(void) {
     puts("Available commands:");
     puts("help                   - Show this command");
     puts("reboot                 - Reboot CPU");
+    puts("sdcard_reset           - Reset SD card");
     puts("ls [path]              - List SD card directory");
     puts("nes_load <path> [save] - Load NES ROM from SD card, optionally load save");
     puts("nes_save <path>        - Save NES battery-backed PRG RAM to SD card");
@@ -94,6 +96,7 @@ static void help(void) {
     puts("nes_resume             - Resume NES core");
     puts("debug_mem              - Show last CPU/PPU SDRAM addresses");
     puts("hexdump <addr> [len]   - Hex dump memory (len default 256)");
+    puts("power                  - Report INA219 power from UPS board");
 }
 
 /*-----------------------------------------------------------------------*/
@@ -128,6 +131,8 @@ static void nes_save_cmd(char *path) {
 static void nes_pause_cmd(void) { nes_control_nes_pause_write(1); }
 
 static void nes_resume_cmd(void) { nes_control_nes_pause_write(0); }
+
+static void sdcard_reset_cmd(void) { spisdcard_init(); }
 
 static void sdcard_ls_cmd(char *path) { sdcard_ls(path); }
 
@@ -191,6 +196,8 @@ static void console_service(void) {
         help();
     else if (strcmp(token, "reboot") == 0)
         reboot_cmd();
+    else if (strcmp(token, "sdcard_reset") == 0)
+        sdcard_reset_cmd();
     else if (strcmp(token, "ls") == 0)
         sdcard_ls_cmd(str);
     else if (strcmp(token, "nes_load") == 0)
@@ -205,6 +212,8 @@ static void console_service(void) {
         debug_mem_cmd();
     else if (strcmp(token, "hexdump") == 0)
         hexdump_cmd(str);
+    else if (strcmp(token, "power") == 0)
+        power_report();
     else if (*token != '\0')
         printf("unknown command\n");
     prompt();
