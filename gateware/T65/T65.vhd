@@ -458,8 +458,8 @@ begin
       if Res_n_i = '0' then
         P <= x"00"; -- ensure we have nothing set on reset
       else
-        tmpP:=P;
         if (Enable = '1') then
+          tmpP:=P;
           if (really_rdy = '1') then
             if MCycle = "000" then
               if LDA = '1' then
@@ -507,7 +507,9 @@ begin
             end if;
             if RstCycle = '1' then
               tmpP(Flag_I) := '1';
-              tmpP(Flag_D) := '0';
+              if mode /= "00" then
+                tmpP(Flag_D) := '0';
+              end if;
             end if;
             tmpP(Flag_1) := '1';
 

@@ -134,22 +134,25 @@ reg [9:0] nes_lost_ticks;
 reg [9:0] nes_lost_ticks_next;
 
 reg [1:0] video_sync_state;
-reg [6:0] video_adjust;  // accoding to timing.py, we'll be lagging by 40 ticks (1 unit = 0.5 tick)
+reg [7:0] video_adjust;  // accoding to timing.py, we'll be lagging by 40 ticks (1 unit = 0.25 tick)
 
 assign stall = (cpu_ce && !cpu_mem_ready) || (ppu_ce && !ppu_mem_ready);
 
-assign nes_clock_en = nes_clock_counter >= SYS_CLK_FREQ;
+assign nes_clock_en = nes_clock_counter >= SYS_CLK_FREQ[NES_CLOCK_COUNTER_WIDTH-1:0];
 assign nes_en       = (nes_clock_en || nes_lost_ticks != 0) && !stall && video_sync_state != VIDEO_SYNC_WAIT;
 
 always @(posedge clk) begin
-  if (rst || nes_reset) begin
+  if (rst) begin
     nes_clock_counter <= 0;
 
   end else begin
-    nes_clock_counter <= nes_clock_counter + NES_CLK_FREQ;
+    nes_clock_counter <= nes_clock_counter +
+      NES_CLK_FREQ[NES_CLOCK_COUNTER_WIDTH-1:0];
 
     if (nes_clock_en)
-      nes_clock_counter <= nes_clock_counter + NES_CLK_FREQ - SYS_CLK_FREQ;
+      nes_clock_counter <= nes_clock_counter +
+        NES_CLK_FREQ[NES_CLOCK_COUNTER_WIDTH-1:0] -
+        SYS_CLK_FREQ[NES_CLOCK_COUNTER_WIDTH-1:0];
   end
 end
 
@@ -166,7 +169,7 @@ always @(*) begin
   end
 
   if (zero_pixel && !zero_pixel_r)
-    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[6:1]};
+    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[7:2]};
 end
 
 always @(posedge clk) begin
@@ -368,7 +371,8 @@ cdc_handshake #(
 );
 
 // normalize to signed integer
-assign audio_sample_tmds_signed = $signed({1'b0, audio_sample_tmds}) - $signed({1'b0, 16'h7fff});
+assign audio_sample_tmds_signed = $signed({1'b0, audio_sample_tmds}) -
+  $signed({1'b0, 16'h7fff});
 
 wire signed [17:0] audio_sample_tmds_dc_blocked;
 wire               audio_sample_tmds_dc_valid;
@@ -612,8 +616,8 @@ always @(posedge clk) begin
   if (rst || nes_reset) begin
     joypad_bits[0] <= 8'b0;
     joypad_bits[0] <= 8'b0;
-
     joypad_clock_r <= 2'b0;
+
   end else begin
     if (typ[0] != 2'b11)
       joypad_bits[0] <= 8'b0;
@@ -702,7 +706,7 @@ always @(posedge clk) begin
 
     case (video_sync_state)
       VIDEO_SYNC_LOST: begin
-        if (scanline == 2 && cycle == 0)
+        if (scanline == 2 && cycle == 0)  // wait for ppu hit scanline = 2, cycle = 0
           video_sync_state <= VIDEO_SYNC_WAIT;
       end
       VIDEO_SYNC_WAIT: begin
@@ -725,7 +729,25 @@ always @(posedge clk) begin
   end
 end
 
-assign leds = {usb_oe[0], usb_oe[1], &(nes_lost_ticks), video_sync_state != VIDEO_SYNC_DONE, nes_reset || nes_paused};
+reg [2:0] led_dim_counter;
+reg [4:0] leds_r;
+
+always @(posedge clk) begin
+  if (rst) begin
+    leds_r          <= 5'b0;
+    led_dim_counter <= 0;
+
+  end else if (nes_clock_en) begin
+    leds_r <= 5'b0;
+    led_dim_counter <= led_dim_counter + 1;
+
+    if (led_dim_counter[2:1] == 2'b11)
+      leds_r <= {(typ[0] == 2'b11) || (typ[1] == 2'b11), &(nes_lost_ticks),
+        (video_sync_state != VIDEO_SYNC_DONE), nes_paused, !nes_reset};
+  end
+end
+
+assign leds = leds_r;
 
 endmodule
 `default_nettype wire
