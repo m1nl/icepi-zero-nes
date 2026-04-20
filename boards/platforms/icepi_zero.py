@@ -58,9 +58,8 @@ _io_common = [
     (
         "i2c",
         0,
-        Subsignal("scl", Pins("R2")),
-        Subsignal("sda", Pins("T2")),
-        IOStandard("LVCMOS33"),
+        Subsignal("scl", Pins("R2"), IOStandard("LVCMOS33"), Misc("PULLMODE=UP")),
+        Subsignal("sda", Pins("T2"), IOStandard("LVCMOS33"), Misc("PULLMODE=UP")),
     ),
     # USB
     (
