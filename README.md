@@ -36,7 +36,7 @@ Install the following tools:
 
 ```bash
 # Clone repository with submodules
-git clone --recursive https://github.com/yourusername/icepi-zero-nes
+git clone --recursive https://github.com/m1nl/icepi-zero-nes
 cd icepi-zero-nes
 
 # Initialize git submodules
