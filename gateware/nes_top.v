@@ -133,8 +133,10 @@ reg [NES_CLOCK_COUNTER_WIDTH-1:0] nes_clock_counter;
 reg [9:0] nes_lost_ticks;
 reg [9:0] nes_lost_ticks_next;
 
+localparam VIDEO_ADJUST_INITIAL = 4 * 40;  // accoding to timing.py, we'll be lagging by 40 ticks (1 adjust unit = 0.25 tick)
+
 reg [1:0] video_sync_state;
-reg [7:0] video_adjust;  // accoding to timing.py, we'll be lagging by 40 ticks (1 unit = 0.25 tick)
+reg [7:0] video_adjust = VIDEO_ADJUST_INITIAL;
 
 assign stall = (cpu_ce && !cpu_mem_ready) || (ppu_ce && !ppu_mem_ready);
 
@@ -169,7 +171,7 @@ always @(*) begin
   end
 
   if (zero_pixel && !zero_pixel_r)
-    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[7:2]};
+    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[7:2]};  // divide video_adjust by 4
 end
 
 always @(posedge clk) begin
@@ -697,9 +699,12 @@ cdc_sync #(
 // timing.py calculations ensure frame rate
 // is same as in original NTSC NES
 always @(posedge clk) begin
-  if (rst || nes_reset) begin
+  if (rst) begin
     video_sync_state <= VIDEO_SYNC_LOST;
-    video_adjust     <= 0;
+    video_adjust     <= VIDEO_ADJUST_INITIAL;
+
+  end else if (nes_reset) begin
+    video_sync_state <= VIDEO_SYNC_LOST;
 
   end else begin
     zero_pixel_r <= zero_pixel;
