@@ -1,38 +1,76 @@
-# LiteDRAM Native Port
+# Repository Guidelines
+
+## Project Structure & Module Organization
+
+- `boards/platforms/` defines IcePi-Zero pins; `boards/targets/icepi_zero.py` assembles the LiteX SoC and clocks. `boards/bios.py` customizes build-local BIOS sources.
+- `gateware/` contains the NES RTL and Python integration. HDMI, CDC, mappers, and USB live in dedicated subdirectories. USB HID is a Git submodule with its own contributor instructions and testbench.
+- `firmware/` contains bare-metal C, startup assembly, linker configuration, SD-card support, and ROM loading.
+- `contrib/` contains timing, palette, and video-sync verification utilities. `build/` holds generated gateware, BIOS, headers, and reports; `litex_src/` holds dependency checkouts.
+
+## Build, Test, and Development Commands
+
+Activate the environment with `source venv/bin/activate`. Initialize dependencies with `git submodule update --init --recursive`. The FPGA toolchain requires GHDL, Yosys, nextpnr-ecp5, and Project Trellis.
+
+```bash
+python3 -m boards.targets.icepi_zero --build
+make -C firmware BUILD_DIR=../build/icepi_zero/
+python3 contrib/timing.py
+python3 contrib/check_video_sync.py
+```
+
+These commands build the FPGA/BIOS, build firmware using generated headers, calculate video timing, and run sync fault-injection checks with Icarus Verilog. There is no desktop runtime; gameplay requires the board, HDMI display, controllers, and an SD card.
+
+## Coding Style & Naming Conventions
+
+Follow surrounding code: four-space indentation for Python and firmware C, two spaces in the top-level Verilog, and tabs in Makefiles. Preserve upstream module styles and license headers. Use `snake_case` for functions and signals, uppercase constants, and paired `.c`/`.h` files for firmware APIs. No project-wide formatter or linter configuration is defined.
+
+## Testing Guidelines
+
+Run targeted simulations for RTL changes and rebuild affected components. USB tests use cocotb with Verilator: install `gateware/usb_hid_host/tb/requirements.txt`, then run `make SIM=verilator` from that directory. Name Python tests `test_*.py` and RTL benches `*_tb.v`. No repository-wide coverage threshold is defined. Record hardware checks separately from simulation results.
+
+## Commit & Pull Request Guidelines
+
+History uses short, imperative subjects such as `fix rom switching` and `update usb_hid_host submodule`. Keep commits focused. PR descriptions should explain the changed behavior, affected components, commands run, and hardware validation; link relevant issues and include images or waveforms when useful.
+
+## Hardware & Generated Configuration
+
+Keep clock frequencies, HDMI dimensions, and timing calculations consistent. Preserve CPU/PPU SDRAM bank mapping and firmware load addresses. Change source configuration rather than generated build files; keep flashing separate from build verification.
+
+## LiteDRAM Native Port
 
 Defined in `litex_src/litedram/litedram/common.py` via `LiteDRAMNativePort`.
 
-## Signals
+### Signals
 
-### cmd (master -> slave)
+#### cmd (master -> slave)
 - `valid` (1)
 - `ready` (1)
 - `we` (1) — 1=write, 0=read
 - `addr` (address_width)
 - `last` (1)
 
-### wdata (master -> slave)
+#### wdata (master -> slave)
 - `valid` (1)
 - `ready` (1)
 - `data` (data_width)
 - `we` (data_width//8) — byte enable
 
-### rdata (slave -> master)
+#### rdata (slave -> master)
 - `valid` (1)
 - `ready` (1)
 - `data` (data_width)
 
-## Usage in LiteX target
+### Usage in LiteX target
 
 ```python
 self.my_port = self.sdram.crossbar.get_port(data_width=8)
 ```
 
-## Verilog wrapper pattern
+### Verilog wrapper pattern
 
 Use `Instance()` in a `LiteXModule`/`Module` subclass, map signals with `o_`/`i_` prefixes, and register the `.v` file with `platform.add_source(...)`.
 
-# Memory Map
+## Memory Map
 
 | Region    | Base         | Size      |
 |-----------|--------------|-----------|
@@ -43,7 +81,7 @@ Use `Instance()` in a `LiteXModule`/`Module` subclass, map signals with `o_`/`i_
 
 `MAIN_RAM_BASE = 0x40000000` (from `build/icepi_zero/software/include/generated/mem.h`)
 
-# NES ROM Layout in MAIN_RAM
+## NES ROM Layout in MAIN_RAM
 
 Addresses are offsets from `MAIN_RAM_BASE` (mirrors `game_loader.v`):
 
@@ -55,7 +93,7 @@ Addresses are offsets from `MAIN_RAM_BASE` (mirrors `game_loader.v`):
 | 0x40800400 | CHR ROM and PPU VRAM |
 | 0x41000000 | Firmware code |
 
-# iNES / NES 2.0 Header Parsing
+## iNES / NES 2.0 Header Parsing
 
 - 16-byte header; magic = `NES\x1A`
 - `flags6[2]` = trainer present (not supported)
@@ -78,7 +116,7 @@ Addresses are offsets from `MAIN_RAM_BASE` (mirrors `game_loader.v`):
   - `[37:36]` timing
   - `[63:38]` 0
 
-# CSR Registers — NESControl
+## CSR Registers — NESControl
 
 Defined in `gateware/nes_top.py` as `NESControl(LiteXModule)`, exposed at SoC level as `self.nes_control` in `boards/targets/icepi_zero.py`.
 
@@ -100,7 +138,7 @@ To expose a `LiteXModule` submodule's CSRs at SoC level, assign it directly on t
 self.nes_control = self.nes_top.control
 ```
 
-# SD Card / FatFS Usage
+## SD Card / FatFS Usage
 
 The icepi_zero board has both SPI and native SDIO pins wired to the same physical SD slot. **Always use native SDIO** (`add_sdcard` / `fatfs_set_ops_sdcard`) — it is faster (4-bit) and has full DMA-based BIOS boot support. SPI mode is only a fallback for boards without SDIO wiring.
 
@@ -110,7 +148,7 @@ The icepi_zero board has both SPI and native SDIO pins wired to the same physica
 - Libraries present in build: `libfatfs.a`, `liblitesdcard.a`
 - `soc.add_sdcard()` is called unconditionally in `boards/targets/icepi_zero.py`
 
-# Demo App Build
+## Demo App Build
 
 - Source: `firmware/`
 - Build command: `make -C firmware BUILD_DIR=../build/icepi_zero`
@@ -119,7 +157,7 @@ The icepi_zero board has both SPI and native SDIO pins wired to the same physica
 - Memory map via `#include <generated/mem.h>`
 - Public API between files goes in a `.h` header; include it in both the `.c` and the caller to avoid `-Wmissing-prototypes`
 
-# Firmware Memory Layout
+## Firmware Memory Layout
 
 The firmware is linked at `0x41000000` (`firmware/linker.ld`):
 
@@ -140,20 +178,20 @@ The firmware is linked at `0x41000000` (`firmware/linker.ld`):
 
 `firmware/linker.ld` sets `_app_base = 0x41000000`.
 
-# LiteX BIOS SD Card Boot
+## LiteX BIOS SD Card Boot
 
-The BIOS looks for `boot.json` on the SD card root, then falls back to `boot.bin`. `boot.json` maps filenames to load addresses; the **last entry** determines the CPU jump address.
+The NES BIOS looks for `boot-nes.json` on the SD card root, then falls back to `boot.bin`. `boards/bios.py` patches a build-local BIOS source copy and sets `BIOS_BOOT_JSON` from the Python target without modifying `litex_src`. The manifest maps filenames to load addresses; the **last entry** determines the CPU jump address.
 
-`firmware/boot.json`:
+`firmware/boot-nes.json`:
 ```json
 {
-    "firmware.bin": "0x41000000"
+    "icepi-zero-nes.bin": "0x41000000"
 }
 ```
 
-Copy both `firmware.bin` and `boot.json` to the root of a FAT-formatted SD card. The BIOS will load `firmware.bin` at `0x41000000` and jump to it.
+Copy both `icepi-zero-nes.bin` and `boot-nes.json` to the root of a FAT-formatted SD card. The BIOS will load `icepi-zero-nes.bin` at `0x41000000` and jump to it.
 
-# NES Loader (`firmware/nes_loader.c`)
+## NES Loader (`firmware/nes_loader.c`)
 
 Loads a `.nes` file from SD card into MAIN_RAM and starts the NES core.
 
@@ -182,7 +220,7 @@ Sequence (`nes_loader_cmd`):
 Entry point: `nes_loader_cmd(const char *path)` — called from `main.c` via `load_prg <path>` command.
 Public prototype declared in `firmware/nes_loader.h`.
 
-# Bare-Metal C Library Limitations (picolibc-minimal)
+## Bare-Metal C Library Limitations (picolibc-minimal)
 
 The demo app links against picolibc-minimal, which is missing many standard functions. Known missing symbols:
 
@@ -194,7 +232,7 @@ The demo app links against picolibc-minimal, which is missing many standard func
 
 **Rule:** When writing bare-metal C for the firmware, never use `sprintf`, `snprintf`, `strcat`, `strcpy`, or `strcasecmp`. Use `memcpy` and `strlen` (from `<string.h>`) for string operations.
 
-# Heap / Dynamic Allocation
+## Heap / Dynamic Allocation
 
 - TLSF allocator: `firmware/tlsf.c` / `firmware/tlsf.h`
 - Wrappers: `firmware/heap.c` / `firmware/heap.h` — provides `malloc`, `realloc`, `free`, `heap_init()`
@@ -205,15 +243,15 @@ The demo app links against picolibc-minimal, which is missing many standard func
   - `PROVIDE(_fheap = _heap_base); PROVIDE(_eheap = _heap_end)`
 - `tlsf.o` must be compiled with `CFLAGS += -U__GNUC__` to avoid `__ffssi2` linker error
 
-# CDC Modules (`gateware/cdc/`)
+## CDC Modules (`gateware/cdc/`)
 
 Glob `platform.add_source(gateware_dir, "cdc", "*.v")` picks up all CDC modules automatically.
 
-## `cdc_sync.v`
+### `cdc_sync.v`
 - 2-stage synchronizer, N-wide (default N=1), with `rst_dst`
 - `(* ASYNC_REG = "TRUE" *)` on both stages
 
-## `cdc_handshake.v`
+### `cdc_handshake.v`
 - 4-phase handshake for single data word transfer across clock domains
 - Parameters: `WIDTH`, `EXTERNAL_ACK` (default 0)
 - When `EXTERNAL_ACK=1`: `valid` stays high until `ack_in` is asserted; CDC blocks until then
@@ -226,7 +264,7 @@ Glob `platform.add_source(gateware_dir, "cdc", "*.v")` picks up all CDC modules 
   end
   ```
 
-# IRQ / EventManager Pattern
+## IRQ / EventManager Pattern
 
 To add an IRQ from a `LiteXModule` submodule:
 
@@ -242,12 +280,12 @@ To add an IRQ from a `LiteXModule` submodule:
 4. In C: register ISR with `irq_attach(NES_CONTROL_INTERRUPT, nes_control_isr)`, set mask with `irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT))`, clear pending in ISR with `nes_control_ev_pending_write(nes_control_ev_pending_read())`, enable event with `nes_control_ev_enable_write(1)`
 5. The `isr()` dispatcher uses `irq_table[]` — **named ISR symbols are NOT called automatically**; `irq_attach()` is mandatory
 
-# SPI Flash Boot
+## SPI Flash Boot
 
 - `add_spi_flash(with_master=False)` — XIP mode; do NOT use `with_master=True` as it conflicts with BIOS memory-mapped access
 - BIOS maps SPI flash at `0x20000000`; bitstream must be at offset 0, BIOS at `+0x100000`
 
-# ROM Rotator (`firmware/rom_rotator.c`)
+## ROM Rotator (`firmware/rom_rotator.c`)
 
 Scans `/roms` directory on SD card for `.nes` files on init, sorts alphabetically, loads first ROM. Three IRQ sources from `NESControl.ev` EventManager trigger navigation.
 
@@ -258,7 +296,7 @@ Scans `/roms` directory on SD card for `.nes` files on init, sorts alphabeticall
 - Path construction uses `memcpy`+`strlen` (no `strcat`/`strcpy`/`sprintf`)
 - `rom_rotator_init()` enables all three events: `nes_control_ev_enable_write(EV_NEXT_ROM | EV_PREVIOUS_ROM | EV_RESET_ROM)`
 
-## EventManager event bits (NESControl)
+### EventManager event bits (NESControl)
 
 | Bit | Name            | Trigger combo                          |
 |-----|-----------------|----------------------------------------|
@@ -268,7 +306,7 @@ Scans `/roms` directory on SD card for `.nes` files on init, sorts alphabeticall
 
 `reset_rom` ISR: asserts `nes_control_nes_reset_write(1)`, waits 100µs via `busy_wait_us(100)`, then reloads the current ROM (does NOT advance index).
 
-## IRQ dispatch pattern in `rom_rotator_isr`
+### IRQ dispatch pattern in `rom_rotator_isr`
 
 ```c
 uint32_t pending = nes_control_ev_pending_read();
@@ -278,11 +316,11 @@ else if (pending & EV_PREVIOUS_ROM) { ... }
 else if (pending & EV_RESET_ROM)    { ... }
 ```
 
-# Audio Pipeline (`gateware/nes_top.v`)
+## Audio Pipeline (`gateware/nes_top.v`)
 
 Audio path runs entirely in the `tmds_clk` domain after a `cdc_handshake` crossing from `clk`.
 
-## Signal chain
+### Signal chain
 
 ```
 cdc_handshake (EXTERNAL_ACK=1, WIDTH=16)
@@ -305,20 +343,20 @@ hdmi_0
     audio_sample_en       -> audio_sample_tmds_en
 ```
 
-## Module interfaces
+### Module interfaces
 
-### `dc_blocker` (`gateware/dc_blocker.v`)
+#### `dc_blocker` (`gateware/dc_blocker.v`)
 - Ports: `clk`, `reset`, `in_valid`, `in_ready`, `out_ready`, `out_valid`, `in [17:0]`, `out [17:0]`
 - First-order IIR: `y[n] = x[n] - x[n-1] + alpha*y[n-1]`, alpha = 1 - 2^-10 (~7.4 Hz corner at 48 kHz)
 - 20-bit internal accumulator with saturation; `in_ready = !out_valid || out_ready`
 
-### `iir_biquad` (`gateware/iir_filter.v`)
+#### `iir_biquad` (`gateware/iir_filter.v`)
 - Ports: `clk`, `reset`, `in_valid`, `in_ready`, `out_ready`, `out_valid`, `in [17:0]`, `out [17:0]`
 - 2nd-order Butterworth LPF, 20 kHz cutoff at 48 kHz, Q4.14 coefficients
 - 6-state FSM, 5 multiply-accumulate cycles per sample
 - `out_valid` is left unconnected in `nes_top.v`; downstream relies on `audio_sample_en` timing
 
-# Yosys / nextpnr Build Options
+## Yosys / nextpnr Build Options
 
 Toolchain flags (`--yosys-flow3`, `--yosys-abc9`, etc.) are passed via `parser.toolchain_argdict` to `builder.build()`. Set defaults in `boards/targets/icepi_zero.py` via `parser.set_defaults()`:
 
