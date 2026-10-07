@@ -52,7 +52,7 @@ mkdir litex_src
 cd litex_src
 wget https://raw.githubusercontent.com/enjoy-digital/litex/master/litex_setup.py
 chmod +x litex_setup.py
-./litex_setup.py --init --install --tag 2026.04
+./litex_setup.py --init --install --tag 2026.08
 cd ..
 ```
 
@@ -81,10 +81,19 @@ openFPGALoader -b icepi-zero --write-flash --offset 0x100000 build/icepi_zero/so
 ### Prepare SD Card
 
 1. Format SD card as FAT32
-2. Copy `firmware/boot.json` to SD card root
+2. Copy `firmware/boot-nes.json` to SD card root
 3. Copy `firmware/icepi-zero-nes.bin` to SD card root
 4. Create a `roms` directory on the SD card
 5. Copy your `.nes` ROM files to the `roms` directory
+
+The NES boot manifest has been renamed from `boot.json` to `boot-nes.json`.
+When upgrading, copy the new manifest to the SD card root and rebuild and flash
+the NES BIOS using the commands above. An older BIOS still searches for
+`boot.json`; renaming the SD card file alone is insufficient. The updated BIOS
+falls back to `boot.bin` if manifest boot fails.
+
+`boot-nes.json` loads and starts `icepi-zero-nes.bin` at `0x41000000`, matching
+the firmware linker address.
 
 ## Usage
 
@@ -200,4 +209,3 @@ This project contains components under various open-source licenses:
 - Sameer Puri for the [HDMI core](https://github.com/hdl-util/hdmi) implementation
 - The LiteX team for the [SoC framework](https://github.com/enjoy-digital/litex)
 - All contributors to the various mapper implementations
-
