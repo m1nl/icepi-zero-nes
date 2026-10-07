@@ -230,7 +230,7 @@ static void load_current(void) {
 #define EV_PREVIOUS_ROM (1 << 1)
 #define EV_RESET_ROM (1 << 2)
 
-static void rom_rotator_isr(void) {
+void __attribute__((section(".sramfunc"), noinline)) rom_rotator_isr(void) {
     uint32_t pending = nes_control_ev_pending_read();
     nes_control_ev_pending_write(pending);
 
@@ -260,9 +260,6 @@ void rom_rotator_discard(void) {
 void rom_rotator_init(void) {
     if (scan_roms() <= 0)
         return;
-
-    irq_attach(NES_CONTROL_INTERRUPT, rom_rotator_isr);
-    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
 
     rom_current = -1;
     rom_next = 0;

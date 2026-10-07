@@ -17,7 +17,7 @@ endif
 
 vpath %.a $(PACKAGES:%=../%)
 
-icepi-zero-nes.elf: $(OBJECTS)
+icepi-zero-nes.elf: $(OBJECTS) linker.ld
 	$(CC) $(LDFLAGS) -T linker.ld -N -o $@ \
 		$(OBJECTS) \
 		$(PACKAGES:%=-L$(BUILD_DIR)/software/%) \

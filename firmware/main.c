@@ -16,8 +16,8 @@
 #include "spisdcard.h"
 
 #include "nes_loader.h"
-#include "rom_rotator.h"
 #include "power.h"
+#include "rom_rotator.h"
 
 /*-----------------------------------------------------------------------*/
 /* Uart                                                                  */
@@ -219,16 +219,31 @@ static void console_service(void) {
     prompt();
 }
 
+void isr_handler(void);
+void __attribute__((section(".sramfunc"), noinline)) isr_handler(void) {
+    unsigned int irqs = irq_pending() & irq_getmask();
+
+    if (irqs & (1u << NES_CONTROL_INTERRUPT))
+        rom_rotator_isr();
+    if (irqs & (1 << UART_INTERRUPT))
+        uart_isr();
+}
+
 int main(void) {
     irq_setmask(0);
     irq_setie(1);
 
     uart_init();
+
+    irq_setmask(irq_getmask() | (1 << UART_INTERRUPT));
+
     heap_init();
 
-    help();
     rom_rotator_init();
 
+    irq_setmask(irq_getmask() | (1 << NES_CONTROL_INTERRUPT));
+
+    help();
     prompt();
 
     while (1) {
