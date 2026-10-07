@@ -132,6 +132,7 @@ reg [NES_CLOCK_COUNTER_WIDTH-1:0] nes_clock_counter;
 
 reg [9:0] nes_lost_ticks;
 reg [9:0] nes_lost_ticks_next;
+reg [10:0] nes_lost_ticks_sum;
 
 localparam VIDEO_ADJUST_INITIAL = 4 * 40;  // accoding to timing.py, we'll be lagging by 40 ticks (1 adjust unit = 0.25 tick)
 
@@ -170,8 +171,12 @@ always @(*) begin
       nes_lost_ticks_next = nes_lost_ticks_next - 1;
   end
 
-  if (zero_pixel && !zero_pixel_r)
-    nes_lost_ticks_next = nes_lost_ticks_next + {4'b0, video_adjust[7:2]};  // divide video_adjust by 4
+  // Saturate the frame correction too: wrapping here discards 1024 ticks.
+  nes_lost_ticks_sum = {1'b0, nes_lost_ticks_next};
+  if (zero_pixel && !zero_pixel_r) begin
+    nes_lost_ticks_sum = nes_lost_ticks_sum + {5'b0, video_adjust[7:2]};
+    nes_lost_ticks_next = nes_lost_ticks_sum[10] ? 10'h3ff : nes_lost_ticks_sum[9:0];
+  end
 end
 
 always @(posedge clk) begin
@@ -502,7 +507,8 @@ usb_hid_host #(
   .FULL_SPEED(1),
   .KEYBOARD_SUPPORT(0),
   .MOUSE_SUPPORT(0),
-  .GAME_SUPPORT(1)
+  .GAME_SUPPORT(1),
+  .XINPUT_SWAP_AB_XY(1)
 ) usb_hid_0 (
   .clk(usb_clk),
   .reset(usb_rst),
@@ -534,7 +540,8 @@ usb_hid_host #(
   .FULL_SPEED(1),
   .KEYBOARD_SUPPORT(0),
   .MOUSE_SUPPORT(0),
-  .GAME_SUPPORT(1)
+  .GAME_SUPPORT(1),
+  .XINPUT_SWAP_AB_XY(1)
 ) usb_hid_1 (
   .clk(usb_clk),
   .reset(usb_rst),
@@ -684,12 +691,23 @@ always @(posedge clk) begin
   end
 end
 
+// Register the counter decode before crossing clock domains. Counter carry
+// glitches must not be interpreted as additional HDMI frame starts.
+reg zero_pixel_tmds;
+
+always @(posedge tmds_clk) begin
+  if (tmds_rst)
+    zero_pixel_tmds <= 1'b0;
+  else
+    zero_pixel_tmds <= cx == 0 && cy == 0;
+end
+
 cdc_sync #(
   .N(1)
 ) cdc_zero_pixel_0 (
   .clk_dst(clk),
   .rst_dst(rst),
-  .in(cx == 0 && cy == 0),
+  .in(zero_pixel_tmds),
   .out(zero_pixel)
 );
 
@@ -699,6 +717,11 @@ cdc_sync #(
 // timing.py calculations ensure frame rate
 // is same as in original NTSC NES
 always @(posedge clk) begin
+  if (rst)
+    zero_pixel_r <= 1'b0;
+  else
+    zero_pixel_r <= zero_pixel;
+
   if (rst) begin
     video_sync_state <= VIDEO_SYNC_LOST;
     video_adjust     <= VIDEO_ADJUST_INITIAL;
@@ -707,8 +730,6 @@ always @(posedge clk) begin
     video_sync_state <= VIDEO_SYNC_LOST;
 
   end else begin
-    zero_pixel_r <= zero_pixel;
-
     case (video_sync_state)
       VIDEO_SYNC_LOST: begin
         if (scanline == 2 && cycle == 0)  // wait for ppu hit scanline = 2, cycle = 0
@@ -722,10 +743,13 @@ always @(posedge clk) begin
         if (zero_pixel && !zero_pixel_r) begin
           if (scanline == 2 && cycle == 0)
             video_adjust <= video_adjust;  // no-op
-          else if (scanline < 2 && !(&video_adjust))
-            video_adjust <= video_adjust + 1;
-          else if (scanline < 4 && (|video_adjust))
-            video_adjust <= video_adjust - 1;
+          else if (scanline < 2) begin
+            if (!(&video_adjust))
+              video_adjust <= video_adjust + 1;
+          end else if (scanline < 4) begin
+            if (|video_adjust)
+              video_adjust <= video_adjust - 1;
+          end
           else
             video_sync_state <= VIDEO_SYNC_LOST;
         end
