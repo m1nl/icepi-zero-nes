@@ -17,6 +17,7 @@ from litex.soc.integration.soc_core import *
 from litex.soc.interconnect import stream
 from migen import *
 
+from boards.bios import configure_bios
 from boards.platforms import icepi_zero
 from gateware.nes_top import NESTop
 
@@ -251,7 +252,7 @@ def main():
 
     builder = Builder(soc, **parser.builder_argdict)
     if args.build:
-        soc.platform.toolchain._yosys_cmds.append("stat -hierarchy")
+        configure_bios(builder, "boot-nes.json")
         builder.build(**parser.toolchain_argdict)
 
     if args.load:
